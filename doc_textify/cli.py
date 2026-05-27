@@ -17,9 +17,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path, default=Path("outputs"), help="Directory for generated files.")
     parser.add_argument(
         "--format",
-        choices=["md", "txt", "both"],
+        choices=["md", "txt", "llm", "both", "all"],
         default="both",
-        help="Primary text output format. JSON sidecar is always written.",
+        help="Primary text output format. JSON sidecar is always written. Use llm for compact AI-readable text.",
     )
     parser.add_argument("--lang", default="eng", help="Tesseract language code, for example eng or chi_sim+eng.")
     parser.add_argument("--force-ocr", action="store_true", help="Skip native PDF text extraction and use OCR path.")

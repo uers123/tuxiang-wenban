@@ -14,9 +14,9 @@ from pathlib import Path
 OWNER = "uers123"
 REPO = "tuxiang-wenban"
 DEFAULT_BRANCH = "main"
-BASE_TAG = "v0.1.0"
-COMMIT_MESSAGE = "Implement doc-textify MVP"
-RELEASE_NAME = "doc-textify Windows executable"
+BASE_TAG = "v0.3.0"
+COMMIT_MESSAGE = "Improve OCR layout analysis and chart extraction"
+RELEASE_NAME = "doc-textify v0.3.0 Windows executable"
 
 INCLUDE_PATHS = [
     ".gitignore",
@@ -27,6 +27,7 @@ INCLUDE_PATHS = [
     "pyproject.toml",
     "requirements-dev.txt",
     "requirements.txt",
+    "reports",
     "tests",
 ]
 
@@ -86,15 +87,32 @@ def main() -> int:
             "tag_name": tag,
             "target_commitish": commit["sha"],
             "name": RELEASE_NAME,
-            "body": "Windows executable for doc-textify. Tesseract remains an optional external OCR dependency.",
+            "body": (
+                "Windows executable for doc-textify v0.3.0.\n\n"
+                "- Adds automatic local Tesseract discovery.\n"
+                "- Improves Chinese OCR normalization and heading classification.\n"
+                "- Adds layout and chart extraction modules.\n"
+                "- Includes the latest JPG/PDF test report."
+            ),
             "draft": False,
             "prerelease": False,
         },
     )
     print(f"Published release {tag}.")
 
-    upload_asset(token, release["upload_url"], root / "dist" / "doc-textify.exe", "doc-textify-windows-x64.exe")
+    upload_asset(
+        token,
+        release["upload_url"],
+        root / "release" / "doc-textify-v0.3.0-windows-x64.zip",
+        "doc-textify-v0.3.0-windows-x64.zip",
+    )
     upload_asset(token, release["upload_url"], root / "ENVIRONMENT.txt", "ENVIRONMENT.txt")
+    upload_asset(
+        token,
+        release["upload_url"],
+        root / "reports" / "精准优化测试报告.md",
+        "精准优化测试报告.md",
+    )
     print("Uploaded release assets.")
     print(release["html_url"])
     return 0
@@ -144,7 +162,7 @@ def upload_asset(token: str, upload_url: str, path: Path, name: str) -> None:
             "Content-Length": str(len(data)),
         },
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
+    with urllib.request.urlopen(request, timeout=600) as response:
         response.read()
 
 

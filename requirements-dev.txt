@@ -1,3 +1,4 @@
 -r requirements.txt
+opencv-python-headless>=4.8
 pytest>=8
 pyinstaller>=6

@@ -1,4 +1,5 @@
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .pytest_cache/
 .pytest_tmp/
@@ -7,5 +8,9 @@ exe_outputs/
 test_outputs/
 build/
 dist/
+release/
+tessdata/
+tu_xiang_wenben/
 *.spec
 sample_input.png
+test_input.png

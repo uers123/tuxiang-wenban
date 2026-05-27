@@ -4,19 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doc-textify"
-version = "0.1.0"
-description = "Convert PDFs and images into AI-readable Markdown/TXT plus JSON metadata without vision LLMs."
+version = "0.3.0"
+description = "Convert PDFs and images into compact AI-readable text plus JSON metadata without vision LLMs."
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "Codex" }]
+authors = [{ name = "doc-textify" }]
 dependencies = [
     "pypdf>=4",
     "Pillow>=10",
+    "pytesseract>=0.3.10",
+    "pypdfium2>=4",
 ]
 
 [project.optional-dependencies]
-ocr = []
+chart = ["opencv-python-headless>=4.8"]
 dev = ["pytest>=8", "pyinstaller>=6"]
+all = ["doc-textify[chart]"]
 
 [project.scripts]
 doc-textify = "doc_textify.cli:main"
@@ -24,3 +27,6 @@ doc-textify-eval = "scripts.evaluate_textification:main"
 
 [tool.setuptools.packages.find]
 include = ["doc_textify*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

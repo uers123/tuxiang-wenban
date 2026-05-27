@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from doc_textify.models import Block, Document, Page
-from doc_textify.renderers import render_json, render_markdown, render_text
+from doc_textify.renderers import render_json, render_llm_text, render_markdown, render_text
 
 
 def test_markdown_contract_renders_page_blocks() -> None:
@@ -48,3 +48,41 @@ def test_json_sidecar_contains_blocks() -> None:
 
     assert '"source": "sample.png"' in data
     assert '"confidence": 99.5' in data
+
+
+def test_llm_renderer_compacts_chart_data() -> None:
+    document = Document(
+        source=Path("chart.png"),
+        pages=[
+            Page(
+                number=1,
+                width=100,
+                height=200,
+                blocks=[
+                    Block(
+                        type="figure",
+                        text="depth/class chart",
+                        metadata={
+                            "chart_data": [
+                                {
+                                    "type": "interval",
+                                    "panel_id": "a",
+                                    "class": 1,
+                                    "start_depth": 2.0,
+                                    "end_depth": 5.0,
+                                },
+                                {"type": "point", "panel_id": "a", "class": 2, "depth": 3.5},
+                            ]
+                        },
+                    )
+                ],
+            )
+        ],
+    )
+
+    text = render_llm_text(document)
+
+    assert "DOC_TEXTIFY_LLM_PROTOCOL v1" in text
+    assert "panel a:" in text
+    assert "class 1 depth 2.0-5.0" in text
+    assert "class 2 depth 3.5" in text

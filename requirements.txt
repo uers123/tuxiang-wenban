@@ -1,2 +1,4 @@
 pypdf>=4
 Pillow>=10
+pytesseract>=0.3.10
+pypdfium2>=4

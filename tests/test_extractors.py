@@ -5,7 +5,7 @@ from doc_textify.models import Block, Page
 
 
 def test_text_to_blocks_keeps_paragraphs() -> None:
-    blocks = _text_to_blocks("Title\n\nFirst line\nsecond line", engine="test")
+    blocks = _text_to_blocks("Main Title\n\nFirst line\nsecond line", engine="test")
 
     assert [block.type for block in blocks] == ["heading", "paragraph"]
     assert blocks[1].text == "First line second line"
