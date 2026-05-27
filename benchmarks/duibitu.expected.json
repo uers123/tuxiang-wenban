@@ -1,0 +1,97 @@
+{
+  "sample_id": "duibitu",
+  "description": "Two side-by-side Chinese depth/class comparison charts from a photographed page.",
+  "required_terms": [
+    "标签",
+    "深度/m",
+    "真实类别",
+    "预测类别",
+    "钻孔 ZK-4",
+    "ZK-10"
+  ],
+  "panels": [
+    {
+      "id": "a",
+      "caption": "(a) 钻孔 ZK-4",
+      "x_axis": {
+        "label": "标签",
+        "categories": [0, 1, 2, 3, 4, 5]
+      },
+      "y_axis": {
+        "label": "深度/m",
+        "min": 0,
+        "max": 28,
+        "tick_step": 2,
+        "direction": "down"
+      },
+      "legend": {
+        "true_class": "blue triangle",
+        "predicted_class": "red dot"
+      },
+      "predicted_intervals": [
+        {"class": 0, "start_depth": 0.0, "end_depth": 5.5},
+        {"class": 1, "start_depth": 5.2, "end_depth": 7.6},
+        {"class": 2, "start_depth": 7.5, "end_depth": 13.8},
+        {"class": 3, "start_depth": 13.8, "end_depth": 19.7},
+        {"class": 4, "start_depth": 19.8, "end_depth": 25.5},
+        {"class": 5, "start_depth": 25.5, "end_depth": 28.0}
+      ],
+      "predicted_points": [
+        {"class": 2, "depth": 0.5},
+        {"class": 2, "depth": 1.0},
+        {"class": 2, "depth": 1.5},
+        {"class": 2, "depth": 2.0},
+        {"class": 1, "depth": 4.2},
+        {"class": 3, "depth": 5.5},
+        {"class": 5, "depth": 5.8},
+        {"class": 2, "depth": 6.8},
+        {"class": 4, "depth": 10.8},
+        {"class": 3, "depth": 13.2},
+        {"class": 3, "depth": 13.4},
+        {"class": 4, "depth": 25.7}
+      ]
+    },
+    {
+      "id": "b",
+      "caption": "(b) ZK-10",
+      "x_axis": {
+        "label": "标签",
+        "categories": [0, 1, 2, 3, 4, 5]
+      },
+      "y_axis": {
+        "label": "深度/m",
+        "min": 0,
+        "max": 30,
+        "tick_step": 2,
+        "direction": "down"
+      },
+      "legend": {
+        "true_class": "blue triangle",
+        "predicted_class": "red dot"
+      },
+      "predicted_intervals": [
+        {"class": 0, "start_depth": 0.0, "end_depth": 5.2},
+        {"class": 1, "start_depth": 5.2, "end_depth": 11.2},
+        {"class": 2, "start_depth": 11.2, "end_depth": 15.0},
+        {"class": 3, "start_depth": 15.0, "end_depth": 21.0},
+        {"class": 4, "start_depth": 20.8, "end_depth": 26.1},
+        {"class": 5, "start_depth": 26.2, "end_depth": 30.0}
+      ],
+      "predicted_points": [
+        {"class": 2, "depth": 0.8},
+        {"class": 5, "depth": 1.9},
+        {"class": 0, "depth": 5.3},
+        {"class": 2, "depth": 5.4},
+        {"class": 2, "depth": 5.9},
+        {"class": 2, "depth": 10.3},
+        {"class": 4, "depth": 10.7},
+        {"class": 4, "depth": 11.1},
+        {"class": 1, "depth": 15.8},
+        {"class": 2, "depth": 20.8},
+        {"class": 2, "depth": 24.1},
+        {"class": 2, "depth": 24.8},
+        {"class": 5, "depth": 25.7}
+      ]
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest_tmp/
 outputs/
 exe_outputs/
+test_outputs/
 build/
 dist/
 *.spec

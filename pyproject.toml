@@ -20,6 +20,7 @@ dev = ["pytest>=8", "pyinstaller>=6"]
 
 [project.scripts]
 doc-textify = "doc_textify.cli:main"
+doc-textify-eval = "scripts.evaluate_textification:main"
 
 [tool.setuptools.packages.find]
 include = ["doc_textify*"]

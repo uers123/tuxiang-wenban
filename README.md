@@ -77,3 +77,33 @@ The JSON sidecar preserves extra structure that plain Markdown cannot carry well
 ## Recommended next stage
 
 Add optional adapters for Docling, MinerU, Marker, PaddleOCR/PP-Structure, or Azure/Google/AWS Document AI, then normalize all outputs into the same internal block model used here.
+
+## Evaluating Image Textification
+
+Text-to-image reconstruction is useful as a demonstration, but it is too subjective to be the main test. The project includes a stricter evaluation method:
+
+1. Create a hand-labeled expected JSON file for a sample image.
+2. Run `doc-textify` to produce the actual JSON sidecar.
+3. Score the actual output against the expected structure.
+
+Example using the provided comparison-chart benchmark:
+
+```powershell
+dist\doc-textify.exe "G:\aaaaaaaaaaaaaaaaa\dili\dili\对比图.jpg" --out test_outputs\duibitu --format both --lang chi_sim+eng
+
+python scripts\evaluate_textification.py `
+  --actual "test_outputs\duibitu\对比图.json" `
+  --expected benchmarks\duibitu.expected.json `
+  --out test_outputs\duibitu\评分报告.md `
+  --json-out test_outputs\duibitu\评分结果.json
+```
+
+The evaluator measures:
+
+- image/page presence
+- required text terms
+- panel, caption, and axis layout
+- chart data intervals and points
+- whether the output is usable or only a placeholder
+
+This gives the project a concrete score even when image generation cannot faithfully judge the result.
