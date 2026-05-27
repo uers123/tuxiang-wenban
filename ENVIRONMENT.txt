@@ -1,0 +1,40 @@
+# doc-textify environment
+
+Project path after migration:
+D:\python\tu_xiang_wenben
+
+Python:
+Python 3.10 or newer is supported.
+The project was developed and tested locally with Python 3.13.5.
+
+Core Python dependencies:
+pypdf>=4
+Pillow>=10
+
+Development and packaging dependencies:
+pytest>=8
+pyinstaller>=6
+
+Optional external OCR dependency:
+Tesseract OCR
+
+Tesseract is not bundled by pip. Install it separately and add tesseract.exe to PATH.
+For Chinese + English OCR, install the chi_sim and eng language data, then run:
+python -m doc_textify input.png --out outputs --format both --lang chi_sim+eng
+
+Install for development:
+python -m pip install -r requirements-dev.txt
+python -m pip install -e .
+
+Run tests:
+python -m pytest -q
+
+Run CLI:
+python -m doc_textify input.pdf --out outputs --format both
+python -m doc_textify input.png --out outputs --format both --lang eng
+
+Build executable:
+python -m PyInstaller --onefile --name doc-textify doc_textify_cli.py
+
+Executable output:
+dist\doc-textify.exe
