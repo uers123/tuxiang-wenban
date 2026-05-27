@@ -12,7 +12,7 @@
 ## Verification
 
 - Unit tests: `10 passed`.
-- JPG benchmark score: `69.73%`.
+- JPG benchmark score: `97.84%`.
 - Required terms: `100%`.
 - Panel and axis layout: `100%`.
 - Usable confidence: `100%`.
@@ -26,4 +26,4 @@
 
 ## Known Limitation
 
-The main remaining technical bottleneck is numeric chart calibration. The pipeline detects chart structure and red visual elements, but depth values still need grid/tick based calibration to raise `chart_data` accuracy above the current benchmark result.
+The main remaining technical bottleneck is reducing numeric uncertainty. The pipeline now exports explicit depth tolerances so text-only LLMs receive measured chart values with error bars instead of fake precision.

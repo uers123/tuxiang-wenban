@@ -164,7 +164,9 @@ def _render_chart_data_markdown(chart_data: list[dict], block: Block, page_numbe
                 cls = inv.get("class", "?")
                 sd = inv.get("start_depth", "?")
                 ed = inv.get("end_depth", "?")
-                parts.append(f"| {cls} | {sd} | {ed} |")
+                tol = inv.get("depth_tolerance")
+                suffix = f" +/- {tol}" if tol else ""
+                parts.append(f"| {cls} | {sd}{suffix} | {ed}{suffix} |")
 
         if data["points"]:
             parts.append("\n| Class | Depth |")
@@ -172,7 +174,12 @@ def _render_chart_data_markdown(chart_data: list[dict], block: Block, page_numbe
             for pt in sorted(data["points"], key=lambda x: (x["class"], x["depth"])):
                 cls = pt.get("class", "?")
                 dp = pt.get("depth", "?")
-                parts.append(f"| {cls} | {dp} |")
+                candidates = pt.get("class_candidates")
+                if candidates and candidates != [cls]:
+                    cls = "/".join(str(item) for item in candidates)
+                tol = pt.get("depth_tolerance")
+                suffix = f" +/- {tol}" if tol else ""
+                parts.append(f"| {cls} | {dp}{suffix} |")
 
     caption = block.text.strip()
     if caption:
@@ -198,15 +205,31 @@ def _render_chart_data_llm(chart_data: list[dict]) -> list[str]:
         intervals = sorted(data["intervals"], key=lambda x: (x.get("class", 0), x.get("start_depth", 0)))
         if intervals:
             compact = [
-                f"class {item.get('class')} depth {item.get('start_depth')}-{item.get('end_depth')}"
+                _format_interval_llm(item)
                 for item in intervals
             ]
             lines.append("    intervals: " + "; ".join(compact))
         points = sorted(data["points"], key=lambda x: (x.get("class", 0), x.get("depth", 0)))
         if points:
-            compact = [f"class {item.get('class')} depth {item.get('depth')}" for item in points]
+            compact = [_format_point_llm(item) for item in points]
             lines.append("    points: " + "; ".join(compact))
     return lines
+
+
+def _format_interval_llm(item: dict) -> str:
+    tol = item.get("depth_tolerance")
+    suffix = f" +/- {tol}" if tol else ""
+    return f"class {item.get('class')} depth {item.get('start_depth')}-{item.get('end_depth')}{suffix}"
+
+
+def _format_point_llm(item: dict) -> str:
+    cls = item.get("class")
+    candidates = item.get("class_candidates")
+    if candidates and candidates != [cls]:
+        cls = "/".join(str(candidate) for candidate in candidates)
+    tol = item.get("depth_tolerance")
+    suffix = f" +/- {tol}" if tol else ""
+    return f"class {cls} depth {item.get('depth')}{suffix}"
 
 
 def _render_block_text(block: Block, page_number: int) -> str:

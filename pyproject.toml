@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doc-textify"
-version = "0.3.0"
+version = "0.3.1"
 description = "Convert PDFs and images into compact AI-readable text plus JSON metadata without vision LLMs."
 readme = "README.md"
 requires-python = ">=3.10"

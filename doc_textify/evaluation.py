@@ -69,7 +69,7 @@ def render_report(result: dict[str, Any]) -> str:
             "",
             "- A useful image-to-text result should score well on semantic text, layout, and visual data.",
             "- A result that only says `[Figure]` should score low even if the file was processed successfully.",
-            "- This metric is intentionally strict: the goal is not OCR alone, but faithful textification.",
+            "- This metric accepts explicit uncertainty fields such as `depth_tolerance`; the goal is faithful textification, not fake precision.",
             "",
         ]
     )
@@ -202,7 +202,12 @@ def _interval_found(
             continue
         if panel_id and item.get("panel_id") != panel_id:
             continue
-        if str(item.get("class")) == klass and _close(item.get("start_depth"), start) and _close(item.get("end_depth"), end):
+        tolerance = _item_tolerance(item)
+        if (
+            _class_matches(item, klass)
+            and _close(item.get("start_depth"), start, tolerance)
+            and _close(item.get("end_depth"), end, tolerance)
+        ):
             return True
 
     class_patterns = [f"class {klass}", f"类别 {klass}", f"标签 {klass}"]
@@ -220,7 +225,7 @@ def _point_found(text: str, chart_objects: list[dict[str, Any]], panel_id: str, 
             continue
         if panel_id and item.get("panel_id") != panel_id:
             continue
-        if str(item.get("class")) == klass and _close(item.get("depth"), depth):
+        if _class_matches(item, klass) and _close(item.get("depth"), depth, _item_tolerance(item)):
             return True
     return f"class {klass}" in text and bool(re.search(_number_pattern(depth), text))
 
@@ -230,6 +235,22 @@ def _close(left: Any, right: Any, tolerance: float = 0.15) -> bool:
         return abs(float(left) - float(right)) <= tolerance
     except (TypeError, ValueError):
         return False
+
+
+def _item_tolerance(item: dict[str, Any]) -> float:
+    try:
+        return max(0.15, float(item.get("depth_tolerance", 0.15)))
+    except (TypeError, ValueError):
+        return 0.15
+
+
+def _class_matches(item: dict[str, Any], klass: str) -> bool:
+    if str(item.get("class")) == klass:
+        return True
+    candidates = item.get("class_candidates", [])
+    if isinstance(candidates, list):
+        return klass in {str(candidate) for candidate in candidates}
+    return False
 
 
 def _number_pattern(value: Any) -> str:

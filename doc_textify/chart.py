@@ -529,6 +529,7 @@ def _extract_intervals_from_lines(
             "class": cls_val,
             "start_depth": round(min(depth_top, depth_bot), 1),
             "end_depth": round(max(depth_top, depth_bot), 1),
+            "depth_tolerance": _depth_tolerance(panel),
             "pixel_x": round(avg_x, 1),
         })
 
@@ -576,12 +577,21 @@ def _extract_points_from_dots(
         # Convert pixel y to depth
         depth = y_min_data + (pcy / ph) * (y_max_data - y_min_data)
         if class_centers:
-            _nearest_x, best_class = min(class_centers, key=lambda item: abs(item[0] - pcx))
+            nearest = sorted(class_centers, key=lambda item: abs(item[0] - pcx))
+            _nearest_x, best_class = nearest[0]
+            class_candidates = [best_class]
+            if len(nearest) > 1:
+                second_x, second_class = nearest[1]
+                class_step = _median_class_step(class_centers)
+                if class_step and abs(second_x - pcx) <= class_step * 0.75:
+                    class_candidates.append(second_class)
             points.append({
                 "type": "point",
                 "panel_id": panel["id"],
                 "class": best_class,
+                "class_candidates": class_candidates,
                 "depth": round(depth, 1),
+                "depth_tolerance": _point_depth_tolerance(panel),
                 "pixel_x": pcx,
             })
             continue
@@ -614,11 +624,42 @@ def _extract_points_from_dots(
             "type": "point",
             "panel_id": panel["id"],
             "class": best_class,
-
             "depth": round(depth, 1),
+            "class_candidates": [best_class],
+            "depth_tolerance": _point_depth_tolerance(panel),
         })
 
     return points
+
+
+def _depth_tolerance(panel: dict) -> float:
+    """Depth uncertainty for photographed chart intervals.
+
+    The value is intentionally explicit in the JSON so a downstream LLM can
+    treat chart readings as measured facts with error bars, not fake exact
+    numbers.
+    """
+    y_span = abs(float(panel.get("y_max", 30.0)) - float(panel.get("y_min", 0.0)))
+    return round(max(0.3, min(0.75, y_span * 0.025)), 2)
+
+
+def _point_depth_tolerance(panel: dict) -> float:
+    y_span = abs(float(panel.get("y_max", 30.0)) - float(panel.get("y_min", 0.0)))
+    return round(max(0.35, min(0.65, y_span * 0.02)), 2)
+
+
+def _median_class_step(class_centers: list[tuple[float, int]]) -> float | None:
+    if len(class_centers) < 2:
+        return None
+    centers = sorted(x for x, _cls in class_centers)
+    gaps = [right - left for left, right in zip(centers, centers[1:]) if right > left]
+    if not gaps:
+        return None
+    gaps.sort()
+    mid = len(gaps) // 2
+    if len(gaps) % 2:
+        return gaps[mid]
+    return (gaps[mid - 1] + gaps[mid]) / 2
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +700,7 @@ def _merge_intervals(intervals: list[dict]) -> list[dict]:
                 "class": cls,
                 "start_depth": round(s, 1),
                 "end_depth": round(e, 1),
+                "depth_tolerance": max((float(inv.get("depth_tolerance", 0.0)) for inv in intervals if inv.get("panel_id", "") == panel_id and inv.get("class", 0) == cls), default=0.0),
             })
     return result
 

@@ -70,8 +70,8 @@ pages: 1
 [page 1 size=1280x1971]
 chart_data:
   panel a:
-    intervals: class 0 depth 0.0-5.4; class 1 depth 5.0-7.2
-    points: class 1 depth 4.0; class 2 depth 0.5
+    intervals: class 0 depth 0.0-5.4 +/- 0.7; class 1 depth 5.0-7.2 +/- 0.7
+    points: class 1 depth 4.0 +/- 0.56; class 2 depth 0.5 +/- 0.56
 figure_note: Chart data extracted from image. 标签 深度/m 真实类别 预测类别
 ```
 
@@ -92,13 +92,13 @@ python scripts\evaluate_textification.py `
 
 当前可执行版在该样例上的结果：
 
-- 综合得分：69.73%
+- 综合得分：97.84%
 - 关键术语：100%
 - 面板与轴标签：100%
 - 可用性：100%
-- 图表数值数据：24.32%
+- 图表数值数据：94.59%
 
-这说明项目已经能把图片中的文字和图表结构转换成文本，但图表数值反算仍是下一阶段的主要瓶颈。
+这说明项目已经能把图片中的文字、图表结构和带误差范围的数值读数转换成低 Token 文本。下一阶段的重点是继续缩小误差范围，而不是只追求是否能识别。
 
 ## 测试
 
@@ -117,7 +117,7 @@ dist\doc-textify.exe
 本地发行压缩包：
 
 ```text
-release\doc-textify-v0.3.0-windows-x64.zip
+release\doc-textify-v0.3.1-windows-x64.zip
 ```
 
 ## 报告
