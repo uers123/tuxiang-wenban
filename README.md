@@ -1,70 +1,126 @@
 # doc-textify
 
-`doc-textify` 是一个不依赖视觉大模型的图片/PDF 文本化工具。它的目标是把 PDF、截图、扫描件、拍照文档和部分图表转换成文本大模型可以直接读取的 Markdown/TXT/JSON/LLM 协议文本。
+## 项目介绍
 
-项目定位不是“让文生图模型复原原图”，而是做一个低成本的视觉预处理器：
+`doc-textify` 是一个面向文本大模型的图片/PDF 文本化预处理器。它的目标是把 PDF、扫描件、截图、拍照文档和部分图表转换成大模型容易读取的 Markdown、TXT、低 Token 文本协议和 JSON 结构化数据。
+
+这个项目的核心思路是：先用 OCR、PDF 解析、版面分析和图表解析把视觉文件编译成文本，再交给没有视觉能力或不希望消耗视觉 Token 的大模型读取。
 
 ```text
-PDF / Image -> doc-textify -> compact text + JSON -> text-only LLM
+PDF / Image -> doc-textify -> Markdown / TXT / LLM Text / JSON -> Text-only LLM
 ```
 
-这样，后面的模型不需要图像识别能力，也不需要消耗高价视觉 token，就能获得页面文字、阅读顺序、版面块、置信度、图表结构和部分数值信息。
+它不是通用视觉大模型的完整替代品，也不声称在所有图片理解任务上都更强。它更适合处理文档、表格、图表、截图、扫描件等“视觉中包含结构化文字事实”的场景。对自然照片、复杂场景、情绪、意图、物体关系等开放式视觉理解，视觉大模型仍然更合适。
 
-## 当前能力
+## 项目说明
 
-- 数字 PDF：优先抽取原生文字层，保留页面、段落、标题、列表和图片占位。
-- 扫描 PDF：可通过 `pypdfium2` 渲染页面后进入 OCR 管线。
-- 图片/截图/拍照文档：使用 Pillow 预处理，再调用本地 Tesseract OCR。
-- 中文/英文混排：支持 `chi_sim+eng`，并做中文 OCR 空格、轴标签、常见误识别的后处理。
-- 版面恢复：包含标题、页眉页脚、列表、阅读顺序和基础多栏排序。
-- 图表文本化：对红色竖线区间、散点、面板、坐标轴标签做结构化提取，输出 `chart_data`。
-- 输出格式：Markdown、TXT、紧凑 LLM 文本、JSON sidecar。
+### 支持的输入
 
-## 不使用什么
+- 数字 PDF：优先抽取原生文字层。
+- 扫描 PDF：将页面渲染为图片后进入 OCR 管线。
+- 图片文件：支持常见图片格式。
+- 截图：适合界面文字、表格、标签、按钮等内容提取。
+- 拍照文档：适合文档页面、图表页面和带文字的纸质资料。
 
-核心管线不调用 GPT、Gemini、Claude、Qwen-VL 等视觉大模型。项目允许使用专用 OCR、PDF 渲染和传统图像处理库，因为它们属于前置文档编译器，而不是让目标大模型自己看图。
+### 输出格式
 
-## 安装
+- Markdown：保留页面、标题、段落、图表和结构化表格。
+- TXT：输出更朴素的文本结果。
+- LLM 文本：面向大模型输入的紧凑文本协议，减少无效 Token。
+- JSON：保存页面、文本块、坐标、置信度、图表数据和元信息。
+
+### 核心能力
+
+- OCR 识别：支持中文、英文和中英混排。
+- PDF 解析：优先使用原生文字层，必要时走 OCR。
+- 版面分析：识别标题、段落、列表、页眉页脚和基础阅读顺序。
+- 图表文本化：提取面板、轴标签、区间、散点和结构化 `chart_data`。
+- 误差表达：图表读数可输出 `+/-` 误差范围，避免伪装成不可靠的精确值。
+- 低 Token 表达：把图片中的有效事实压缩为大模型更容易处理的文本。
+
+### 项目边界
+
+`doc-textify` 不调用 GPT、Gemini、Claude、Qwen-VL 等视觉大模型作为核心识别管线。它允许使用专用 OCR、PDF 渲染和传统图像处理能力，因为这些工具承担的是“视觉文件到文本事实”的前置编译工作。
+
+## 项目与传统项目对比
+
+| 维度 | 传统 OCR | 直接使用视觉大模型 | doc-textify |
+| --- | --- | --- | --- |
+| 主要目标 | 把图片中的文字识别出来 | 直接理解图片并回答问题 | 把图片/PDF 编译成大模型可读文本 |
+| 输出形式 | 普通文本或带文字层 PDF | 自然语言回答 | Markdown、TXT、LLM 文本、JSON |
+| Token 成本 | 后续仍需整理文本 | 图像 Token 成本较高 | 只把提取后的有效事实交给大模型 |
+| 结构化能力 | 通常较弱 | 依赖模型临场理解 | 明确输出页面、块、坐标、置信度和图表数据 |
+| 可评测性 | 可评 OCR 字符准确率 | 开放式回答较难稳定评测 | 可用 expected JSON 做结构化评分 |
+| 隐私与部署 | 可本地运行 | 通常依赖云端模型 | 可本地处理，再决定是否发送文本 |
+| 图表/表格 | 容易丢结构 | 能描述但不一定稳定 | 面向结构化数据提取设计 |
+| 适用场景 | 简单扫描件、票据、纯文字图片 | 自然图片、开放式视觉问答 | 文档、论文、截图、表格、工程图表 |
+| 主要局限 | 版面和语义理解弱 | 成本高、结果不易复查 | 不擅长开放式自然场景理解 |
+
+## 使用方法
+
+### 安装
+
+安装 Python 依赖：
 
 ```powershell
 python -m pip install -e .[all]
 ```
 
-图片 OCR 需要安装 Tesseract 和对应语言包。Windows 常见语言参数：
+如果需要处理图片或扫描 PDF，请安装 Tesseract OCR，并安装需要的语言包。中文和英文混排通常使用：
 
 ```powershell
-doc-textify input.jpg --out outputs --format all --lang chi_sim+eng
+chi_sim+eng
 ```
 
-如果只处理数字 PDF，可以不安装 Tesseract：
+### 基础命令
 
 ```powershell
 doc-textify input.pdf --out outputs --format all
 ```
 
-## 命令行
+`--format all` 会同时输出 Markdown、TXT、LLM 文本和 JSON。
+
+### 处理 PDF
+
+处理数字 PDF：
 
 ```powershell
-doc-textify INPUT --out outputs --format both --lang chi_sim+eng
+doc-textify input.pdf --out outputs --format all
 ```
 
-参数：
+强制 PDF 走 OCR 路径：
 
-- `--format md`：输出 Markdown 和 JSON。
-- `--format txt`：输出 TXT 和 JSON。
-- `--format llm`：输出低 Token 的 `.llm.txt` 和 JSON。
-- `--format both`：输出 Markdown、TXT 和 JSON。
-- `--format all`：输出 Markdown、TXT、LLM 文本和 JSON。
-- `--force-ocr`：PDF 强制走渲染 + OCR 路径。
-- `--min-confidence`：过滤低置信度 OCR 词。
+```powershell
+doc-textify input.pdf --out outputs --format all --force-ocr --lang chi_sim+eng
+```
 
-## LLM 协议输出
+### 处理图片
 
-`--format llm` 会生成面向文本大模型的紧凑文本，例如：
+处理普通图片：
+
+```powershell
+doc-textify image.jpg --out outputs --format all --lang chi_sim+eng
+```
+
+降低 OCR 置信度阈值以保留更多疑似文字：
+
+```powershell
+doc-textify image.jpg --out outputs --format all --lang chi_sim+eng --min-confidence 20
+```
+
+### 输出 LLM 低 Token 文本
+
+只生成面向大模型输入的紧凑文本和 JSON：
+
+```powershell
+doc-textify image.jpg --out outputs --format llm --lang chi_sim+eng
+```
+
+LLM 文本示例：
 
 ```text
 DOC_TEXTIFY_LLM_PROTOCOL v1
-source: 对比图.jpg
+source: image.jpg
 pages: 1
 
 [page 1 size=1280x1971]
@@ -75,67 +131,57 @@ chart_data:
 figure_note: Chart data extracted from image. 标签 深度/m 真实类别 预测类别
 ```
 
-这个输出比完整 JSON 更省 token，比普通 OCR 文本更有结构，适合直接作为文本大模型的输入上下文。
+### 常用参数
 
-## 评测
+| 参数 | 说明 |
+| --- | --- |
+| `--out` | 指定输出目录 |
+| `--format md` | 输出 Markdown 和 JSON |
+| `--format txt` | 输出 TXT 和 JSON |
+| `--format llm` | 输出 LLM 文本和 JSON |
+| `--format both` | 输出 Markdown、TXT 和 JSON |
+| `--format all` | 输出 Markdown、TXT、LLM 文本和 JSON |
+| `--lang` | 指定 OCR 语言，例如 `eng` 或 `chi_sim+eng` |
+| `--force-ocr` | PDF 强制使用 OCR 路径 |
+| `--min-confidence` | 设置 OCR 词语置信度过滤阈值 |
 
-项目包含一个人工标注的图表样例评测：
+### 评测示例
 
-```powershell
-doc-textify "G:\aaaaaaaaaaaaaaaaa\dili\dili\对比图.jpg" --out test_outputs\jpg_exe_final --format all --lang chi_sim+eng --min-confidence 20
-
-python scripts\evaluate_textification.py `
-  --actual test_outputs\jpg_exe_final\对比图.json `
-  --expected benchmarks\duibitu.expected.json `
-  --out test_outputs\jpg_exe_final\评分报告.md
-```
-
-当前可执行版在该样例上的结果：
-
-- 综合得分：97.84%
-- 关键术语：100%
-- 面板与轴标签：100%
-- 可用性：100%
-- 图表数值数据：94.59%
-
-这说明项目已经能把图片中的文字、图表结构和带误差范围的数值读数转换成低 Token 文本。下一阶段的重点是继续缩小误差范围，而不是只追求是否能识别。
-
-## 测试
+项目支持使用人工标注的 expected JSON 对输出结果进行结构化评分：
 
 ```powershell
-python -m pytest -q --basetemp .pytest_tmp\pytest
+doc-textify image.jpg --out outputs --format all --lang chi_sim+eng
+doc-textify-eval --actual actual.json --expected expected.json --out report.md
 ```
 
-## 发行文件
+评测重点包括：
 
-本地 Windows 可执行文件：
+- 图像或页面是否被正确表示。
+- 关键术语是否被提取。
+- 面板、标题、坐标轴等布局信息是否存在。
+- 图表区间和散点是否转为结构化数据。
+- 输出是否包含明确警告、占位符或不确定性说明。
 
-```text
-dist\doc-textify.exe
-```
+## 当前能力与限制
 
-本地发行压缩包：
+当前项目在文档和工程图表类样例上已经可以输出可评测的结构化结果，并能用较少文本表达图片中的关键信息。它适合作为文本大模型的视觉前处理层，尤其适合需要批量处理、成本敏感、结果可复查的场景。
 
-```text
-release\doc-textify-v0.3.1-windows-x64.zip
-```
+仍需继续优化的方向：
 
-## 报告
+- 更精确的图表坐标校准。
+- 更强的复杂表格结构恢复。
+- 更稳定的公式、手写体和低质量拍照识别。
+- 更多类型 benchmark 和下游问答评测。
+- 更完整的批量处理和工程化接口。
 
-详细测试和优化报告位于：
+## License / 贡献
 
-```text
-reports\精准优化测试报告.md
-```
+当前仓库尚未声明许可证。使用、分发或二次开发前，请先确认项目维护者后续发布的许可说明。
 
-## 下一步
+欢迎围绕以下方向贡献：
 
-最值得继续做的是图表坐标校准器：
-
-1. 检测每个图表面板的水平网格线。
-2. OCR 识别深度刻度。
-3. 建立像素 y 到实际深度的映射。
-4. 重新计算红色区间和散点深度。
-5. 剔除线段端点、印刷噪声和图例干扰。
-
-完成这一层后，项目会更接近“文本大模型的眼睛”：不是描述图片的大概含义，而是用更低 token 成本提供可验证、可引用、可推理的视觉文本事实。
+- 新增 OCR 或文档解析后端。
+- 增加更多 benchmark 样例。
+- 改进图表、表格、公式解析。
+- 优化 LLM 文本协议。
+- 完善测试、文档和发行流程。
