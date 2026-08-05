@@ -1,0 +1,132 @@
+{
+  "source": "documents/en_paper_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "eng",
+    "page_count": 8
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "A Novel Approach to Neural Machine Translation with Hybrid Attention Mechanisms",
+          "confidence": 0.99,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "John Smith, Jane Doe, and Robert Johnson. Department of Computer Science, University of Example, Cambridge, MA 02139.",
+          "confidence": 0.97,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "1. Introduction",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Neural Machine Translation (NMT) has achieved remarkable progress since the introduction of the Transformer architecture (Vaswani et al., 2017). However, existing approaches face challenges when dealing with long-range dependencies and domain-specific terminology. In this paper, we propose a hybrid attention mechanism that combines self-attention with sparse attention patterns to address these limitations. Our experiments on WMT14 En-De and En-Fr benchmarks demonstrate a BLEU improvement of 1.2 points over the baseline Transformer.",
+          "confidence": 0.96,
+          "engine": "pdf"
+        },
+        {
+          "type": "formula",
+          "text": "S(Q, K, V) = softmax(QK^T / sqrt(d_k) + M_s) V",
+          "confidence": 0.85,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "S(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}} + M_s\\right)V",
+            "label": "eq:sparse_attention"
+          }
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "2. Related Work",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Attention mechanisms have been extensively studied in the context of sequence-to-sequence models. Bahdanau et al. (2015) first introduced additive attention for NMT. Later, Luong et al. (2015) proposed several variants of multiplicative attention. The self-attention mechanism in the Transformer model (Vaswani et al., 2017) enabled parallel computation and achieved state-of-the-art results.",
+          "confidence": 0.97,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Sparse attention patterns have been explored to reduce computational complexity. Child et al. (2019) proposed strided sparse attention, while Beltagy et al. (2020) introduced Longformer with local and global attention. Our work differs by adaptively selecting attention patterns based on input characteristics.",
+          "confidence": 0.96,
+          "engine": "pdf"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "3. Hybrid Attention Model",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "formula",
+          "text": "L = -Σ_t log P(y_t | y_<t, x) + λ R(θ)",
+          "confidence": 0.87,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "\\mathcal{L} = -\\sum_t \\log P(y_t \\mid y_{<t}, x) + \\lambda R(\\theta)",
+            "label": "eq:loss"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": "where R(θ) is a regularization term encouraging sparsity in the attention distribution. The hyperparameter λ controls the trade-off between translation quality and computational efficiency.",
+          "confidence": 0.94,
+          "engine": "pdf"
+        },
+        {
+          "type": "table",
+          "text": "Model | BLEU (En-De) | BLEU (En-Fr) | Params | Speed\nTransformer (base) | 27.3 | 38.1 | 65M | 1.0x\nOurs (hybrid) | 28.5 | 39.2 | 68M | 1.3x\nOurs (sparse) | 28.1 | 38.8 | 68M | 1.8x\nOurs (adaptive) | 28.5 | 39.3 | 70M | 1.4x",
+          "confidence": 0.92,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 5,
+            "cols": 5,
+            "headers": ["Model", "BLEU (En-De)", "BLEU (En-Fr)", "Params", "Speed"]
+          }
+        },
+        {
+          "type": "heading",
+          "text": "4. Experiments",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "We evaluate our approach on three standard benchmarks: WMT14 English-German (4.5M sentence pairs), WMT14 English-French (36M sentence pairs), and IWSLT15 English-Vietnamese (133K sentence pairs). All models are trained on 8 NVIDIA V100 GPUs for 300K steps with a batch size of 4096 tokens.",
+          "confidence": 0.95,
+          "engine": "pdf"
+        }
+      ]
+    }
+  ]
+}

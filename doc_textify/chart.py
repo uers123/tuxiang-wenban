@@ -3,7 +3,8 @@
 Analyses color images to extract structured data from charts:
   - Panel/subplot detection
   - Axis label OCR integration
-  - Color-based element extraction (data points, intervals, lines)
+  - Multi-color element extraction (data points, intervals, lines)
+  - Auto color detection via K-means clustering
   - Pixel-to-data-coordinate mapping
   - JSON-compatible chart_data output for evaluation framework
 
@@ -14,9 +15,11 @@ Pillow-only analysis when OpenCV is not available (limited capability).
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 from typing import Any
 
+from .calibration import calibrate_axis, pixel_to_data
 from .models import Block
 
 
@@ -29,6 +32,8 @@ def analyze_chart(
     ocr_blocks: list[Block],
     page_width: float | None = None,
     page_height: float | None = None,
+    *,
+    chart_colors: list[str] | None = None,
 ) -> dict[str, Any]:
     """Analyse a colour image for chart content.
 
@@ -36,6 +41,8 @@ def analyze_chart(
         color_image: PIL Image in RGB mode.
         ocr_blocks: OCR blocks extracted from the same image.
         page_width, page_height: Image dimensions.
+        chart_colors: List of colour names to extract (e.g. ["red", "blue"]).
+            If None, auto-detects dominant chart colours via K-means.
 
     Returns:
         dict with key "chart_data" → list of structured data objects
@@ -59,15 +66,49 @@ def analyze_chart(
     # Step 1: Detect chart panels (subplot regions)
     panels = _detect_panels(color_image, ocr_blocks, img_w, img_h)
     if not panels:
-        # Try with a simpler fallback if OpenCV is not available
         panels = _detect_panels_fallback(color_image, ocr_blocks, img_w, img_h)
-    if not panels:
-        return result
 
-    # Step 2: For each panel, extract coloured elements and map to data
-    for panel in panels:
-        panel_data = _extract_panel_data(color_image, panel, ocr_blocks)
-        result["chart_data"].extend(panel_data)
+    if panels:
+        # Step 2: Auto-detect chart colours if not specified
+        try:
+            if chart_colors is None:
+                chart_colors, color_meta = _auto_detect_chart_colors(color_image, panels)
+                chart_colors = chart_colors or ["red"]
+                result["detected_colors"] = chart_colors
+                result["detected_colors_metadata"] = color_meta
+            else:
+                result["detected_colors"] = chart_colors
+                result["detected_colors_metadata"] = {"method": "manual", "colors": chart_colors}
+
+            # Step 3: For each panel, extract coloured elements and map to data
+            for panel in panels:
+                for color_name in chart_colors:
+                    panel_data = _extract_panel_data(
+                        color_image, panel, ocr_blocks, target_color=color_name,
+                    )
+                    result["chart_data"].extend(panel_data)
+        except Exception:
+            # Panel/colour extraction is best-effort.  If anything raises
+            # (e.g. numpy/OpenCV edge cases), fall through to the coarse
+            # structure detector below instead of losing the figure entirely.
+            pass
+
+    # Step 4: Coarse structure fallback.
+    # Colour-based extraction only works for coloured charts.  Black-and-
+    # white / line-drawn charts (e.g. classification charts with numbered
+    # zones) produce no intervals/points; panel detection may also fail on
+    # busy figures.  When chart_data is still empty, look for axis-frame-
+    # like structure (long horizontal + vertical lines) and, if found, emit
+    # a coarse ``chart_detected`` entry with best-effort axis labels rather
+    # than returning nothing.
+    if not result["chart_data"]:
+        fallback_entries = _chart_structure_fallback(
+            color_image, ocr_blocks, img_w, img_h,
+        )
+        if fallback_entries:
+            result["chart_data"].extend(fallback_entries)
+            result["chart_detected"] = True
+            result["detection_method"] = "structure_fallback"
 
     return result
 
@@ -79,75 +120,41 @@ def analyze_chart(
 def _detect_panels(
     color_image, ocr_blocks, img_w: int, img_h: int,
 ) -> list[dict[str, Any]]:
-    """Detect chart panel regions via rectangle detection.
-
-    Uses OpenCV edge detection + contour finding to locate rectangular
-    grid regions. Each panel is described by its bounding box and
-    detected axis information.
-
-    Returns list of panel dicts:
-        { "id": str, "x0": int, "y0": int, "x1": int, "y1": int,
-          "x_label": str, "y_label": str,
-          "x_min": float, "x_max": float,
-          "y_min": float, "y_max": float,
-          "y_direction": str }
-    """
+    """Detect chart panel regions via rectangle detection."""
     try:
         import cv2
         import numpy as np
     except ImportError:
-        return []  # OpenCV not available
+        return []
 
     img = np.array(color_image)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-    # Edge detection
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-
-    # Morphological close to connect edges
     kernel = np.ones((5, 5), np.uint8)
     closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
-
-    # Find contours (rectangular grid regions)
     contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Filter for rectangular regions of significant size
-    min_area = (img_w * img_h) * 0.05  # at least 5% of image area
-    max_area = (img_w * img_h) * 0.60  # at most 60%
+    min_area = (img_w * img_h) * 0.05
+    max_area = (img_w * img_h) * 0.60
 
     rectangles = []
     for cnt in contours:
         area = cv2.contourArea(cnt)
         if area < min_area or area > max_area:
             continue
-
         x, y, w, h = cv2.boundingRect(cnt)
         aspect = w / h if h > 0 else 0
-
-        # Chart panels can be tall vertical logs (for example depth/class
-        # plots), so accept narrow rectangles as long as they are not
-        # hairlines.
         if aspect < 0.15 or aspect > 3.0:
             continue
-
-        # Check rectangularity (approximate polygon)
         peri = cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, 0.04 * peri, True)
-
         if len(approx) < 4:
             continue
-
-        rectangles.append({
-            "x0": x, "y0": y, "x1": x + w, "y1": y + h,
-            "area": area,
-        })
+        rectangles.append({"x0": x, "y0": y, "x1": x + w, "y1": y + h, "area": area})
 
     if not rectangles:
         return []
 
-    # Sort left-to-right, assign panel IDs. Depth/class comparison charts
-    # often have two tall panels whose top y differs by a few pixels; sorting
-    # by y first swaps the semantic (a)/(b) order.
     rectangles.sort(key=lambda r: r["x0"])
 
     panels = []
@@ -160,15 +167,13 @@ def _detect_panels(
             "id": panel_id,
             "x0": rect["x0"], "y0": rect["y0"],
             "x1": rect["x1"], "y1": rect["y1"],
-            "x_label": "",
-            "y_label": "",
+            "x_label": "", "y_label": "",
             "x_min": 0.0, "x_max": 5.0,
             "y_min": 0.0, "y_max": inferred_y_max,
             "y_direction": "down",
         })
 
-    panels = _annotate_panels_with_ocr(panels, ocr_blocks)
-    return panels
+    return _annotate_panels_with_ocr(panels, ocr_blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -176,53 +181,35 @@ def _detect_panels(
 # ---------------------------------------------------------------------------
 
 def _detect_panels_fallback(color_image, ocr_blocks, img_w, img_h):
-    """Simple panel detection using edge detection via Pillow.
-
-    Useful when OpenCV is not available. Less accurate than the
-    OpenCV path but can detect simple chart layouts.
-    """
+    """Simple panel detection using edge detection via Pillow."""
     try:
-        from PIL import Image, ImageFilter, ImageOps
+        from PIL import Image, ImageFilter
         import numpy as np
     except ImportError:
         return []
 
-    # Edge detection via Pillow's FIND_EDGES filter
     gray = color_image.convert("L")
     edges = gray.filter(ImageFilter.FIND_EDGES)
     edge_arr = np.array(edges)
-
-    # Horizontal and vertical projection
-    h_proj = edge_arr.sum(axis=1)  # row sums
-    v_proj = edge_arr.sum(axis=0)  # column sums
-
-    # Look for gaps in projections to split panels
+    h_proj = edge_arr.sum(axis=1)
+    v_proj = edge_arr.sum(axis=0)
     h_thresh = np.max(h_proj) * 0.1
     v_thresh = np.max(v_proj) * 0.1
 
-    # Find horizontal gaps (between rows of panels)
     h_gaps = _find_projection_gaps(h_proj, h_thresh, min_gap=int(img_h * 0.02))
-    # Find vertical gaps (between columns of panels)
     v_gaps = _find_projection_gaps(v_proj, v_thresh, min_gap=int(img_w * 0.02))
 
     if not h_gaps and not v_gaps:
-        return []  # single region, might be a single chart
+        return []
 
-    # Generate grid regions from gaps
-    h_regions = _gap_to_regions(h_gaps, 0, img_h)
-    v_regions = _gap_to_regions(v_gaps, 0, img_w)
-
-    if not h_regions:
-        h_regions = [(0, img_h)]
-    if not v_regions:
-        v_regions = [(0, img_w)]
+    h_regions = _gap_to_regions(h_gaps, 0, img_h) or [(0, img_h)]
+    v_regions = _gap_to_regions(v_gaps, 0, img_w) or [(0, img_w)]
 
     panels = []
     for idx, (y0, y1) in enumerate(h_regions):
         for jdx, (x0, x1) in enumerate(v_regions):
             panel_area = (x1 - x0) * (y1 - y0)
-            min_area = (img_w * img_h) * 0.05
-            if panel_area < min_area:
+            if panel_area < (img_w * img_h) * 0.05:
                 continue
             panel_id = chr(ord("a") + len(panels))
             panels.append({
@@ -238,7 +225,7 @@ def _detect_panels_fallback(color_image, ocr_blocks, img_w, img_h):
 
 
 def _find_projection_gaps(proj, threshold, min_gap):
-    """Find gaps in a projection profile where values fall below threshold."""
+    """Find gaps in a projection profile."""
     gaps = []
     in_gap = False
     gap_start = 0
@@ -248,9 +235,8 @@ def _find_projection_gaps(proj, threshold, min_gap):
                 gap_start = i
                 in_gap = True
         else:
-            if in_gap:
-                if i - gap_start >= min_gap:
-                    gaps.append((gap_start, i))
+            if in_gap and i - gap_start >= min_gap:
+                gaps.append((gap_start, i))
                 in_gap = False
     if in_gap and len(proj) - gap_start >= min_gap:
         gaps.append((gap_start, len(proj)))
@@ -258,7 +244,7 @@ def _find_projection_gaps(proj, threshold, min_gap):
 
 
 def _gap_to_regions(gaps, start, end):
-    """Convert gaps into regions (areas between gaps)."""
+    """Convert gaps into regions."""
     if not gaps:
         return [(start, end)]
     regions = []
@@ -273,20 +259,250 @@ def _gap_to_regions(gaps, start, end):
 
 
 # ---------------------------------------------------------------------------
+# Coarse chart detection fallback (axis-frame structure)
+# ---------------------------------------------------------------------------
+
+#: Minimum length (fraction of image dimension) for a line to count as an
+#: axis-frame/grid line in the structure fallback.  Short text strokes and
+#: table cell rules are excluded, so plain text pages rarely trigger.
+_STRUCTURE_MIN_H_FRAC = 0.20
+_STRUCTURE_MIN_V_FRAC = 0.20
+
+
+def _chart_structure_fallback(
+    color_image, ocr_blocks, img_w: int, img_h: int,
+) -> list[dict[str, Any]]:
+    """Coarse chart detection when panel segmentation / colour extraction
+    produced nothing.
+
+    Black-and-white line charts (classification charts, axis frames, log-
+    log plots, ...) have no coloured data elements, so the colour pipeline
+    yields an empty ``chart_data`` even when panels were found.  This
+    fallback instead looks for axis-frame-like structure: long horizontal
+    *and* vertical lines, clustered into one region per connected group.
+    For each region it emits a coarse ``chart_detected`` entry with
+    best-effort axis labels read from nearby OCR blocks.
+
+    Returns a list of chart_data dicts (possibly empty).
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return []
+
+    img = np.array(color_image)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    h, w = bw.shape
+
+    # Morphological long-line extraction.  The kernels are long enough that
+    # axis frames / grid lines survive the open, while isolated text strokes
+    # (which are much shorter) are removed.
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, w // 24), 1))
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(15, h // 24)))
+    h_lines = cv2.morphologyEx(bw, cv2.MORPH_OPEN, h_kernel)
+    v_lines = cv2.morphologyEx(bw, cv2.MORPH_OPEN, v_kernel)
+
+    h_contours = cv2.findContours(h_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    v_contours = cv2.findContours(v_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+
+    min_h_len = w * _STRUCTURE_MIN_H_FRAC
+    min_v_len = h * _STRUCTURE_MIN_V_FRAC
+    long_h = [cv2.boundingRect(c) for c in h_contours if cv2.boundingRect(c)[2] >= min_h_len]
+    long_v = [cv2.boundingRect(c) for c in v_contours if cv2.boundingRect(c)[3] >= min_v_len]
+
+    # A real chart needs both horizontal and vertical frame evidence.
+    if not long_h or not long_v:
+        return []
+
+    # Merge long lines into a mask and cluster them into chart regions
+    # (each connected cluster = one chart box).
+    line_mask = np.zeros((h, w), dtype=np.uint8)
+    for x, y, lw, lh in long_h:
+        line_mask[y:y + lh, x:x + lw] = 255
+    for x, y, lw, lh in long_v:
+        line_mask[y:y + lh, x:x + lw] = 255
+    line_mask = cv2.dilate(line_mask, np.ones((7, 7), np.uint8), iterations=1)
+
+    num_comps, labels = cv2.connectedComponents(line_mask)
+
+    entries: list[dict[str, Any]] = []
+    for comp_id in range(1, num_comps):
+        ys, xs = np.nonzero(labels == comp_id)
+        if len(ys) < 50:
+            continue
+        x0, x1 = int(xs.min()), int(xs.max())
+        y0, y1 = int(ys.min()), int(ys.max())
+        if x1 - x0 < min_h_len or y1 - y0 < min_v_len:
+            continue
+
+        # Require both horizontal and vertical line evidence inside this
+        # cluster (rejects e.g. a long underline merged with a border).
+        h_inside = sum(
+            1 for (lx, ly, lw, lh) in long_h
+            if lx < x1 and lx + lw > x0 and ly < y1 and ly + lh > y0
+        )
+        v_inside = sum(
+            1 for (lx, ly, lw, lh) in long_v
+            if lx < x1 and lx + lw > x0 and ly < y1 and ly + lh > y0
+        )
+        if h_inside < 1 or v_inside < 1:
+            continue
+
+        entries.append(_build_structure_entry(
+            ocr_blocks, x0, y0, x1, y1,
+            h_inside=h_inside, v_inside=v_inside,
+        ))
+
+    # If clustering produced no usable region but we clearly have both
+    # long-H and long-V lines, emit one entry for the union bounding box.
+    if not entries:
+        all_x0 = min(min(r[0] for r in long_h), min(r[0] for r in long_v))
+        all_y0 = min(min(r[1] for r in long_h), min(r[1] for r in long_v))
+        all_x1 = max(max(r[0] + r[2] for r in long_h), max(r[0] + r[2] for r in long_v))
+        all_y1 = max(max(r[1] + r[3] for r in long_h), max(r[1] + r[3] for r in long_v))
+        if all_x1 - all_x0 >= min_h_len and all_y1 - all_y0 >= min_v_len:
+            entries.append(_build_structure_entry(
+                ocr_blocks, all_x0, all_y0, all_x1, all_y1,
+                h_inside=len(long_h), v_inside=len(long_v),
+            ))
+
+    return entries
+
+
+def _build_structure_entry(
+    ocr_blocks, x0: int, y0: int, x1: int, y1: int,
+    *, h_inside: int, v_inside: int,
+) -> dict[str, Any]:
+    """Build a coarse ``chart_detected`` chart_data entry for a region."""
+    x_label, y_label = _structure_axis_labels(ocr_blocks, (x0, y0, x1, y1))
+    annotations = _structure_annotations(ocr_blocks, (x0, y0, x1, y1))
+    caption = _structure_caption(ocr_blocks, (x0, y0, x1, y1))
+
+    confidence = round(min(0.95, 0.35 + 0.10 * min(h_inside, 4)
+                           + 0.10 * min(v_inside, 4)), 2)
+
+    return {
+        "type": "chart_detected",
+        "panel_id": "chart",
+        "confidence": confidence,
+        "axis_labels": {"x": x_label, "y": y_label},
+        "caption": caption,
+        "structure": {
+            "horizontal_lines": h_inside,
+            "vertical_lines": v_inside,
+            "region": [x0, y0, x1, y1],
+            "region_width": x1 - x0,
+            "region_height": y1 - y0,
+        },
+        "text_annotations": annotations,
+        "detection": "structure_fallback",
+    }
+
+
+def _structure_axis_labels(
+    ocr_blocks, region: tuple[int, int, int, int],
+) -> tuple[str, str]:
+    """Best-effort axis labels from OCR blocks near the region edges.
+
+    X label: the block whose top edge is closest below the region's bottom
+    edge, horizontally overlapping the region's central span.  Y label: the
+    longest block strictly left of the region whose vertical centre lies
+    inside the region's vertical span (rotated axis titles are tall blocks
+    centred on the plot).  Legend/caption text is filtered out.
+    """
+    x0, y0, x1, y1 = region
+    rw, rh = x1 - x0, y1 - y0
+
+    def _is_legend_or_caption(text: str) -> bool:
+        t = text.strip()
+        if re.match(r"^\s*\d+[\.\)]", t):
+            return True
+        if re.match(r"^.{0,12}?(fic|fig|figure)\.?\s*\d", t, re.IGNORECASE):
+            return True
+        return False
+
+    x_cands: list[tuple[float, str, float]] = []  # (gap_below, text, by0)
+    y_cands: list[tuple[int, str, float]] = []    # (len, text, bx1)
+    for block in ocr_blocks:
+        if not block.bbox:
+            continue
+        bx0, by0, bx1, by1 = block.bbox
+        text = " ".join(block.text.split())
+        if not text or _is_legend_or_caption(text):
+            continue
+        bcx = (bx0 + bx1) / 2
+        bcy = (by0 + by1) / 2
+
+        # X-axis label: directly below the frame, horizontally centred.
+        # Axis titles are multi-character; single stray tokens (e.g. "2")
+        # are tick residue and are ignored.
+        if (len(text) >= 4
+                and y1 < by0 <= y1 + max(rh * 0.25, 40)
+                and x0 + rw * 0.15 <= bcx <= x1 - rw * 0.15):
+            x_cands.append((by0 - y1, text, by0))
+
+        # Y-axis label: left of the frame, vertically centred on it.
+        # (A shared y-axis title sits left of the *first* subplot, so allow
+        # a generous distance for right-hand subplots.)
+        if (len(text) >= 3
+                and bx1 < x0 + rw * 0.05
+                and y0 - rh * 0.05 <= bcy <= y1 + rh * 0.05):
+            y_cands.append((len(text), text, bx1))
+
+    x_label = min(x_cands, key=lambda t: (t[0], -len(t[1])))[1] if x_cands else ""
+    y_label = max(y_cands, key=lambda t: (t[0], -t[2]))[1] if y_cands else ""
+    return x_label, y_label
+
+
+def _structure_annotations(
+    ocr_blocks, region: tuple[int, int, int, int],
+) -> list[str]:
+    """Short OCR tokens fully inside the region (tick values, zone
+    numbers, in-plot labels).  Best-effort; deduplicated."""
+    x0, y0, x1, y1 = region
+    seen: set[str] = set()
+    annotations: list[str] = []
+    for block in ocr_blocks:
+        if not block.bbox:
+            continue
+        bx0, by0, bx1, by1 = block.bbox
+        text = block.text.strip()
+        if not text or len(text) > 14:
+            continue
+        if bx0 >= x0 and by0 >= y0 and bx1 <= x1 and by1 <= y1:
+            if text not in seen:
+                seen.add(text)
+                annotations.append(text)
+    return annotations
+
+
+def _structure_caption(
+    ocr_blocks, region: tuple[int, int, int, int],
+) -> str:
+    """Figure caption text found directly below the region, if any."""
+    _x0, y0, _x1, y1 = region
+    for block in ocr_blocks:
+        if not block.bbox:
+            continue
+        by0, by1 = block.bbox[1], block.bbox[3]
+        if by0 < y1 or by0 > y1 + max((y1 - y0) * 0.6, 90):
+            continue
+        head = " ".join(block.text.split())[:60]
+        if re.search(r"(fic|fig|figure)\.?\s*\d", head, re.IGNORECASE):
+            return " ".join(block.text.split())
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # OCR annotation of panels
 # ---------------------------------------------------------------------------
 
 def _annotate_panels_with_ocr(
     panels: list[dict], ocr_blocks: list[Block],
 ) -> list[dict]:
-    """Use OCR text blocks near panel edges to identify axis labels.
-
-    Matches text blocks to panels based on proximity, looking for:
-      - x-axis labels (text below the panel)
-      - y-axis labels (text to the left of the panel)
-      - Panel captions (text above or below)
-      - Tick labels (text near edges)
-    """
+    """Use OCR text blocks near panel edges to identify axis labels."""
     if not ocr_blocks:
         return panels
 
@@ -295,7 +511,6 @@ def _annotate_panels_with_ocr(
         pw = px1 - px0
         ph = py1 - py0
 
-        # Axis label candidates
         x_candidates = []
         y_candidates = []
         caption_candidates = []
@@ -304,35 +519,27 @@ def _annotate_panels_with_ocr(
             if not block.bbox:
                 continue
             bx0, by0, bx1, by1 = block.bbox
-
-            # Block center
             bcx = (bx0 + bx1) / 2
             bcy = (by0 + by1) / 2
 
-            # X-axis label: centered below the panel
             if (bcx > px0 - pw * 0.2 and bcx < px1 + pw * 0.2
                     and by0 > py1 and by1 < py1 + ph * 0.3):
                 x_candidates.append((block.text, by0))
 
-            # Y-axis label: to the left of the panel, vertically centered
             if (bx1 < px0 and bcy > py0 - ph * 0.2 and bcy < py1 + ph * 0.2):
                 y_candidates.append((block.text, bx1))
 
-            # Caption: directly above or below
             if (bcx > px0 - pw * 0.1 and bcx < px1 + pw * 0.1
                     and ((by1 < py0 and by0 > py0 - ph * 0.3)
                          or (by0 > py1 and by1 < py1 + ph * 0.3))):
                 caption_candidates.append((block.text, bcy))
 
-        # Pick closest candidates
         if x_candidates:
             x_candidates.sort(key=lambda t: t[1])
             panel["x_label"] = x_candidates[0][0]
-
         if y_candidates:
             y_candidates.sort(key=lambda t: t[1], reverse=True)
             panel["y_label"] = y_candidates[0][0]
-
         if caption_candidates:
             caption_candidates.sort(key=lambda t: t[1])
             panel["caption"] = caption_candidates[0][0]
@@ -340,50 +547,638 @@ def _annotate_panels_with_ocr(
     return panels
 
 
-# ---------------------------------------------------------------------------
-# Colour element extraction from panel regions
-# ---------------------------------------------------------------------------
+# ===================================================================
+# Multi-colour chart element extraction
+# ===================================================================
 
-# HSV colour ranges for common chart elements
-_COLOR_RANGES = {
-    "red_dot": {
-        "lower": (0, 50, 50),
-        "upper": (10, 255, 255),
-    },
-    "red_dot_alt": {
-        "lower": (170, 50, 50),
-        "upper": (180, 255, 255),
-    },
-    "blue_triangle": {
-        "lower": (100, 50, 50),
-        "upper": (130, 255, 255),
+# ── Full HSV colour preset library ──────────────────────────────────
+# Each preset can have multiple sub-ranges (e.g. red wraps around 0).
+# The "element_type" hint guides morphology kernel sizing.
+# Saturation/value thresholds are deliberately low (≥40) to catch
+# faded prints photos, and low-res scans.
+# ────────────────────────────────────────────────────────────────────
+
+CHART_COLOR_PRESETS: dict[str, dict] = {
+    # ── Red (very common: predicted classes, emphasis intervals) ──
+    "red": {
+        "label": "red",
+        "ranges": [
+            {"lower": (0, 50, 40), "upper": (12, 255, 255)},
+            {"lower": (168, 50, 40), "upper": (180, 255, 255)},
+        ],
+        "element_type": "fill",
     },
     "red_line": {
-        "lower": (0, 100, 50),
-        "upper": (10, 255, 255),
+        "label": "red (lines only)",
+        "ranges": [
+            {"lower": (0, 100, 50), "upper": (10, 255, 255)},
+            {"lower": (170, 100, 50), "upper": (180, 255, 255)},
+        ],
+        "element_type": "line",
     },
-    "red_line_alt": {
-        "lower": (170, 100, 50),
-        "upper": (180, 255, 255),
+    # ── Blue (very common: true-class triangles, scatter points) ──
+    "blue": {
+        "label": "blue",
+        "ranges": [
+            {"lower": (95, 50, 40), "upper": (135, 255, 255)},
+        ],
+        "element_type": "fill",
+    },
+    "blue_dark": {
+        "label": "dark blue",
+        "ranges": [
+            {"lower": (100, 100, 30), "upper": (135, 255, 180)},
+        ],
+        "element_type": "fill",
+    },
+    # ── Green ────────────────────────────────────────────────────────
+    "green": {
+        "label": "green",
+        "ranges": [
+            {"lower": (40, 50, 40), "upper": (80, 255, 255)},
+        ],
+        "element_type": "fill",
+    },
+    "green_dark": {
+        "label": "dark green",
+        "ranges": [
+            {"lower": (40, 100, 30), "upper": (80, 255, 180)},
+        ],
+        "element_type": "fill",
+    },
+    # ── Cyan / Teal ──────────────────────────────────────────────────
+    "cyan": {
+        "label": "cyan",
+        "ranges": [
+            {"lower": (80, 60, 40), "upper": (100, 255, 255)},
+        ],
+        "element_type": "fill",
+    },
+    # ── Yellow / Orange ──────────────────────────────────────────────
+    "yellow": {
+        "label": "yellow",
+        "ranges": [
+            {"lower": (20, 50, 80), "upper": (38, 255, 255)},
+        ],
+        "element_type": "fill",
+    },
+    "orange": {
+        "label": "orange",
+        "ranges": [
+            {"lower": (10, 80, 80), "upper": (22, 255, 255)},
+        ],
+        "element_type": "fill",
+    },
+    # ── Magenta / Purple ─────────────────────────────────────────────
+    "magenta": {
+        "label": "magenta",
+        "ranges": [
+            {"lower": (140, 50, 40), "upper": (168, 255, 255)},
+        ],
+        "element_type": "fill",
+    },
+    "purple": {
+        "label": "purple",
+        "ranges": [
+            {"lower": (125, 50, 40), "upper": (155, 255, 255)},
+        ],
+        "element_type": "fill",
+    },
+    # ── Black / Dark grey ────────────────────────────────────────────
+    "black": {
+        "label": "black",
+        "ranges": [
+            {"lower": (0, 0, 0), "upper": (180, 255, 70)},
+        ],
+        "element_type": "line",
+    },
+    # ── White (for inverted colour schemes on dark backgrounds) ─────
+    "white": {
+        "label": "white",
+        "ranges": [
+            {"lower": (0, 0, 220), "upper": (180, 30, 255)},
+        ],
+        "element_type": "fill",
     },
 }
 
 
+def _auto_detect_chart_colors(
+    color_image, panels: list[dict],
+) -> tuple[list[str], dict[str, Any]]:
+    """Detect dominant chart data colours using multi-K K-means with
+    elbow-method, histogram fallback, adaptive saturation filtering,
+    and contrast-ratio guard.
+
+    Samples pixels from each panel's central region (excluding background)
+    and clusters them. Returns (colour_names, metadata_dict).
+
+    Falls back to (["red"], fallback_metadata) if detection fails.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return ["red"], {"method": "fallback", "reason": "opencv_unavailable"}
+
+    # Sample pixels from panel interiors, avoiding edges (which are often
+    # grid lines or axis frames)
+    samples = []
+    img = np.array(color_image)
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+
+    for panel in panels:
+        x0, y0, x1, y1 = panel["x0"], panel["y0"], panel["x1"], panel["y1"]
+        # Sample central 60% of each panel to avoid axis/grid-line bias
+        mx0 = int(x0 + (x1 - x0) * 0.20)
+        my0 = int(y0 + (y1 - y0) * 0.20)
+        mx1 = int(x0 + (x1 - x0) * 0.80)
+        my1 = int(y0 + (y1 - y0) * 0.80)
+        if mx1 <= mx0 or my1 <= my0:
+            continue
+        region = hsv[my0:my1, mx0:mx1]
+        # Flatten and downsample (every 4th pixel) to keep K-means fast
+        pixels = region.reshape(-1, 3)[::4]
+        samples.append(pixels)
+
+    if not samples:
+        return ["red"], {"method": "fallback", "reason": "no_samples"}
+
+    all_pixels = np.concatenate(samples, axis=0)
+    if len(all_pixels) < 100:
+        return ["red"], {"method": "fallback", "reason": "too_few_pixels",
+                          "pixel_count": len(all_pixels)}
+
+    meta: dict[str, Any] = {"method": "kmeans_multi_k",
+                            "pixel_count": int(len(all_pixels))}
+
+    # ── Step 1: Multi-K K-means with elbow method + silhouette ───────
+    k_values = [3, 4, 5, 6, 7, 8]
+    best_k, centers, labels, k_scores = _find_best_k_multi(
+        all_pixels, k_values,
+    )
+    meta["k_values_tried"] = k_values
+    meta["k_scores"] = k_scores
+
+    if centers is None or labels is None:
+        hist_colors = _histogram_fallback(all_pixels)
+        meta["method"] = "histogram_fallback"
+        meta["fallback_reason"] = "kmeans_failed"
+        return hist_colors, meta
+
+    meta["best_k"] = best_k
+    unique, counts = np.unique(labels, return_counts=True)
+    total = float(sum(counts))
+
+    # ── Step 2: Filter clusters with adaptive saturation threshold ───
+    detected, sat_threshold, v_threshold = _filter_clusters_adaptive(
+        centers, counts, total, all_pixels,
+    )
+    meta["saturation_threshold"] = sat_threshold
+    meta["value_threshold"] = v_threshold
+    meta["cluster_ratios"] = {}
+    for center, count in zip(centers, counts):
+        ratio = float(count) / total
+        h, s, v = center
+        cn = _hsv_to_color_name((float(h), float(s), float(v)))
+        if cn and ratio >= 0.03 and ratio <= 0.70:
+            meta["cluster_ratios"][cn] = round(ratio, 4)
+
+    # ── Step 3: Histogram fallback if K-means found nothing useful ────
+    if not detected or detected == {"red"}:
+        hist_colors = _histogram_fallback(all_pixels)
+        if hist_colors and hist_colors != ["red"]:
+            meta["method"] = "histogram_fallback"
+            meta["fallback_reason"] = "kmeans_only_found_red"
+            return hist_colors, meta
+
+    if not detected:
+        return ["red"], dict(meta, method="fallback",
+                            reason="no_colors_detected")
+
+    # ── Step 4: Contrast guard (merge too-similar colours) ────────────
+    before_guard = set(detected)
+    detected = _contrast_guard(detected, centers, counts, total)
+    if before_guard != detected:
+        meta["contrast_merges"] = sorted(before_guard - detected)
+
+    # Return in stable order
+    ordered = [c for c in ["red", "blue", "green", "cyan", "yellow",
+                             "orange", "magenta", "purple"] if c in detected]
+    result = ordered or list(detected)
+    meta["detected_colors"] = result
+    return result, meta
+
+
+def _hsv_to_color_name(hsv_center: tuple) -> str | None:
+    """Map an HSV centre to the closest named colour preset.
+
+    Uses fuzzy matching at boundaries: h=15 matches either red or orange
+    depending on proximity.
+    """
+    h_val, s_val, v_val = hsv_center
+
+    if s_val < 20:
+        # Desaturated → black, grey, or white
+        if v_val < 80:
+            return "black"
+        return None  # skip grey/white (usually background)
+
+    # Define hue ranges with soft boundaries
+    hue_ranges: list[tuple[str, int, int]] = [
+        ("red", 0, 12),
+        ("orange", 13, 24),
+        ("yellow", 25, 37),
+        ("green", 38, 79),
+        ("cyan", 80, 99),
+        ("blue", 100, 139),
+        ("purple", 140, 159),
+        ("magenta", 160, 168),
+        ("red", 169, 180),  # red wraps around
+    ]
+
+    # Exact match
+    for name, lo, hi in hue_ranges:
+        if lo <= h_val <= hi:
+            return name
+
+    # Fuzzy match at boundaries: find closest range within 10°
+    best_name = None
+    best_dist = float("inf")
+    for name, lo, hi in hue_ranges:
+        if h_val < lo:
+            dist = lo - h_val
+        elif h_val > hi:
+            dist = h_val - hi
+        else:
+            dist = 0
+        if dist < best_dist and dist <= 10:
+            best_dist = dist
+            best_name = name
+
+    return best_name
+
+
+# ── Multi-K K-means helpers ──────────────────────────────────────
+
+def _find_best_k_multi(
+    pixels: "np.ndarray", k_values: list[int],
+) -> tuple[int | None, "np.ndarray | None", "np.ndarray | None", dict]:
+    """Try multiple k values and pick the best via elbow + silhouette scoring.
+
+    Returns (best_k, centers, labels, scores_dict) where scores_dict maps
+    k → {"wcss":..., "silhouette":..., "elbow":..., "combined":...}.
+    """
+    import cv2
+    import numpy as np
+
+    pixels_f32 = pixels.astype(np.float32)
+    n = len(pixels_f32)
+    if n < 50:
+        return None, None, None, {}
+
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
+    results = {}  # k → (centers, labels, wcss, silhouette)
+
+    for k in k_values:
+        if k >= n // 2:
+            continue
+        compactness, labels_k, centers_k = cv2.kmeans(
+            pixels_f32, k, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS,
+        )
+        wcss = float(compactness)
+        sil = _compute_silhouette_sampled(pixels_f32, labels_k.flatten(), k)
+        results[k] = (centers_k, labels_k.flatten(), wcss, sil)
+
+    if not results:
+        return None, None, None, {}
+
+    # Compute elbow score (second derivative / curvature of WCSS)
+    ks_sorted = sorted(results.keys())
+    wcss_vals = np.array([results[k][2] for k in ks_sorted], dtype=np.float64)
+
+    elbow_map: dict[int, float] = {}
+    if len(ks_sorted) >= 3:
+        wcss_norm = wcss_vals / wcss_vals.max() if wcss_vals.max() > 0 else wcss_vals
+        for i in range(1, len(ks_sorted) - 1):
+            curvature = wcss_norm[i - 1] + wcss_norm[i + 1] - 2 * wcss_norm[i]
+            elbow_map[ks_sorted[i]] = float(curvature)
+
+    # Combine elbow + silhouette (normalize both to [0, 1])
+    sil_vals = np.array([results[k][3] for k in ks_sorted], dtype=np.float64)
+    sil_norm = np.zeros_like(sil_vals)
+    if float(np.ptp(sil_vals)) > 1e-9:
+        sil_norm = (sil_vals - sil_vals.min()) / float(np.ptp(sil_vals))
+
+    combined: dict[int, float] = {}
+    scores: dict[int, dict[str, float]] = {}
+    for i, k in enumerate(ks_sorted):
+        elbow = elbow_map.get(k, 0.0)
+        if elbow_map:
+            e_max = max(elbow_map.values())
+            if e_max > 1e-9:
+                elbow /= e_max
+        combined[k] = 0.4 * float(sil_norm[i]) + 0.6 * elbow
+        scores[k] = {
+            "wcss": round(float(wcss_vals[i]), 2),
+            "silhouette": round(float(sil_vals[i]), 4),
+            "elbow": round(elbow, 4),
+            "combined": round(combined[k], 4),
+        }
+
+    best_k = max(combined, key=combined.get)
+    centers, labels, _, _ = results[best_k]
+    return best_k, centers, labels, scores
+
+
+def _compute_silhouette_sampled(
+    pixels: "np.ndarray", labels: "np.ndarray", n_clusters: int,
+) -> float:
+    """Compute simplified silhouette score using cluster-centre distances.
+
+    Uses at most 800 samples for speed.  Score ∈ [-1, 1], higher is better.
+    """
+    import numpy as np
+
+    n = len(labels)
+    if n <= 800:
+        sample_idx = np.arange(n)
+    else:
+        rng = np.random.RandomState(42)
+        sample_idx = rng.choice(n, 800, replace=False)
+
+    sampled = pixels[sample_idx]
+    sampled_l = labels[sample_idx]
+
+    cluster_ids = np.unique(labels)
+    if len(cluster_ids) < 2:
+        return 0.0
+
+    centres = {}
+    for cid in cluster_ids:
+        mask = labels == cid
+        centres[cid] = pixels[mask].mean(axis=0)
+
+    scores = []
+    for i in range(len(sampled)):
+        c_i = sampled_l[i]
+        own_center = centres.get(c_i)
+        if own_center is None:
+            continue
+        a_i = float(np.sqrt(((sampled[i] - own_center) ** 2).sum()))
+
+        b_i = float("inf")
+        for cj in cluster_ids:
+            if cj == c_i:
+                continue
+            other_center = centres.get(cj)
+            if other_center is not None:
+                dist = float(np.sqrt(((sampled[i] - other_center) ** 2).sum()))
+                if dist < b_i:
+                    b_i = dist
+
+        if b_i == float("inf") or max(a_i, b_i) == 0:
+            continue
+        scores.append((b_i - a_i) / max(a_i, b_i))
+
+    return float(np.mean(scores)) if scores else 0.0
+
+
+# ── Adaptive saturation filter ───────────────────────────────────
+
+def _filter_clusters_adaptive(
+    centers: "np.ndarray", counts: "np.ndarray", total: float,
+    all_pixels: "np.ndarray",
+) -> tuple[set[str], int, int]:
+    """Filter clusters using adaptive saturation threshold.
+
+    Starts at s=20 and increases if too many pixels are saturated.
+    Returns (detected_colors, sat_threshold, val_threshold).
+    """
+    import numpy as np
+
+    s_values = all_pixels[:, 1].astype(float)
+
+    # Adaptive saturation: start at 20, increase if too many high-S pixels
+    s_threshold = 20
+    v_threshold = 20
+
+    high_s_ratio = (float((s_values >= s_threshold).sum()) / len(s_values)
+                    if len(s_values) > 0 else 0.0)
+
+    if high_s_ratio > 0.65:
+        s_threshold = 35
+    elif high_s_ratio > 0.45:
+        s_threshold = 30
+    elif high_s_ratio > 0.30:
+        s_threshold = 25
+
+    detected: set[str] = set()
+    center_color_map: dict[str, tuple] = {}
+
+    for center, count in zip(centers, counts):
+        ratio = float(count) / total
+        if ratio < 0.03 or ratio > 0.70:
+            continue
+        h, s, v = center
+        if s < s_threshold or v < v_threshold:
+            continue
+        color_name = _hsv_to_color_name((float(h), float(s), float(v)))
+        if color_name:
+            if color_name not in center_color_map or ratio > center_color_map[color_name][3]:
+                center_color_map[color_name] = (float(h), float(s), float(v), ratio)
+            detected.add(color_name)
+
+    _filter_clusters_adaptive._last_cluster_info = center_color_map  # type: ignore[attr-defined]
+    return detected, s_threshold, v_threshold
+
+
+# ── Histogram-based fallback ─────────────────────────────────────
+
+def _histogram_fallback(
+    all_pixels: "np.ndarray",
+) -> list[str]:
+    """Fallback: detect colours via H-channel histogram peak detection.
+
+    Used when K-means fails to produce meaningful clusters.
+    """
+    import numpy as np
+
+    if len(all_pixels) < 100:
+        return ["red"]
+
+    h_vals = all_pixels[:, 0]
+    s_vals = all_pixels[:, 1]
+    v_vals = all_pixels[:, 2]
+
+    # Keep only reasonably saturated pixels (S ≥ 20, V ≥ 20)
+    mask = (s_vals >= 20) & (v_vals >= 20)
+    h_filtered = h_vals[mask].astype(int)
+
+    if len(h_filtered) < 20:
+        return ["red"]
+
+    # Build histogram with 180 bins (H ∈ [0, 179])
+    hist, _bin_edges = np.histogram(h_filtered, bins=180, range=(0, 179))
+    hist_f = hist.astype(np.float64)
+
+    # Smooth histogram with moving average (window = 5)
+    kernel = np.ones(5) / 5.0
+    hist_smooth = np.convolve(hist_f, kernel, mode="same")
+
+    # Find peaks (local maxima above mean + 0.5 * std)
+    mean_hist = float(hist_smooth.mean())
+    std_hist = float(hist_smooth.std())
+    threshold = mean_hist + 0.5 * std_hist
+
+    peaks: list[int] = []
+    for i in range(1, len(hist_smooth) - 1):
+        if (hist_smooth[i] > hist_smooth[i - 1]
+                and hist_smooth[i] > hist_smooth[i + 1]
+                and hist_smooth[i] > threshold):
+            peaks.append(i)
+
+    if not peaks:
+        # Relax threshold
+        threshold = mean_hist + 0.2 * std_hist
+        for i in range(1, len(hist_smooth) - 1):
+            if (hist_smooth[i] > hist_smooth[i - 1]
+                    and hist_smooth[i] > hist_smooth[i + 1]
+                    and hist_smooth[i] > threshold):
+                peaks.append(i)
+
+    if not peaks:
+        return ["red"]
+
+    # Map peaks to colour names
+    detected: set[str] = set()
+    for peak_h in peaks:
+        color_name = _hsv_to_color_name((float(peak_h), 100.0, 100.0))
+        if color_name:
+            detected.add(color_name)
+
+    if not detected:
+        return ["red"]
+
+    ordered = [c for c in ["red", "blue", "green", "cyan", "yellow",
+                             "orange", "magenta", "purple"] if c in detected]
+    return ordered or list(detected)
+
+
+# ── Contrast guard ───────────────────────────────────────────────
+
+def _contrast_guard(
+    detected: set[str], centers: "np.ndarray",
+    counts: "np.ndarray", total: float,
+) -> set[str]:
+    """Merge colour clusters that are too visually similar (H-distance < 15°).
+
+    Also accounts for circular HSV hue space.
+    """
+    import numpy as np
+
+    if len(detected) <= 1:
+        return detected
+
+    color_h_map: dict[str, tuple[float, float]] = {}  # name → (h, ratio)
+
+    for center, count in zip(centers, counts):
+        ratio = float(count) / total
+        if ratio < 0.03 or ratio > 0.70:
+            continue
+        h, s, v = center
+        if s < 20 or v < 20:
+            continue
+        color_name = _hsv_to_color_name((float(h), float(s), float(v)))
+        if color_name and color_name in detected:
+            if (color_name not in color_h_map
+                    or ratio > color_h_map[color_name][1]):
+                color_h_map[color_name] = (float(h), ratio)
+
+    names = list(detected)
+    to_remove: set[str] = set()
+
+    for i in range(len(names)):
+        if names[i] in to_remove:
+            continue
+        for j in range(i + 1, len(names)):
+            if names[j] in to_remove:
+                continue
+            h_i = color_h_map.get(names[i], (float("inf"), 0))[0]
+            h_j = color_h_map.get(names[j], (float("inf"), 0))[0]
+            if h_i == float("inf") or h_j == float("inf"):
+                continue
+
+            # Circular H-distance (H ∈ [0, 180) in OpenCV)
+            h_dist = abs(h_i - h_j)
+            h_dist = min(h_dist, 180 - h_dist)
+
+            if h_dist < 15:
+                # Merge: keep the one with larger pixel ratio
+                ratio_i = color_h_map[names[i]][1]
+                ratio_j = color_h_map[names[j]][1]
+                if ratio_i >= ratio_j:
+                    to_remove.add(names[j])
+                else:
+                    to_remove.add(names[i])
+
+    return detected - to_remove
+
+
+# ── Colour mask builder ────────────────────────────────────────────
+
+def _build_color_mask(hsv, color_name: str) -> "np.ndarray":
+    """Build a unified binary mask for the given colour name.
+
+    Looks up CHART_COLOR_PRESETS and merges all HSV sub-ranges.
+    Falls back to red mask if colour name is unknown.
+    """
+    import cv2
+    import numpy as np
+
+    preset = CHART_COLOR_PRESETS.get(color_name)
+    if preset is None:
+        # Fallback: try common aliases
+        alias_map = {
+            "dark_blue": "blue_dark",
+            "light_blue": "blue",
+            "dark_green": "green_dark",
+            "light_green": "green",
+            "pink": "magenta",
+            "violet": "purple",
+            "grey": "black",
+            "gray": "black",
+        }
+        resolved = alias_map.get(color_name, "red")
+        preset = CHART_COLOR_PRESETS.get(resolved, CHART_COLOR_PRESETS["red"])
+
+    masks = []
+    for r in preset["ranges"]:
+        lower = np.array(r["lower"], dtype=np.uint8)
+        upper = np.array(r["upper"], dtype=np.uint8)
+        masks.append(cv2.inRange(hsv, lower, upper))
+
+    if len(masks) == 1:
+        return masks[0]
+    combined = masks[0]
+    for m in masks[1:]:
+        combined = cv2.bitwise_or(combined, m)
+    return combined
+
+
+# ── Panel data extraction ──────────────────────────────────────────
+
 def _extract_panel_data(
     color_image, panel: dict, ocr_blocks: list[Block],
+    *,
+    target_color: str = "red",
 ) -> list[dict]:
-    """Extract structured data from a single chart panel.
+    """Extract structured data from a single chart panel for one colour.
 
-    Strategy: cluster red vertical lines by x-position and use their
-    y-extent as class depth ranges, instead of relying on grid boundary
-    detection. This gives more robust coordinate mapping because the
-    red lines ARE the data markers.
+    Strategy: cluster coloured vertical lines by x-position and use their
+    y-extent as class depth ranges. Extract scattered dots separately.
 
-    Returns list of dicts:
-      - type: "interval" | "point"
-      - panel_id: str
-      - class: int
-      - depth / start_depth / end_depth: float
+    Returns list of dicts with type, panel_id, class, depth, etc.
     """
     result: list[dict] = []
 
@@ -401,54 +1196,57 @@ def _extract_panel_data(
 
     pw = x1 - x0
     ph = y1 - y0
+
+    # ── Pixel→data calibration via grid lines & tick labels ──────────
+    if "_calibration" not in panel:
+        panel["_calibration"] = calibrate_axis(color_image, panel, ocr_blocks)
+
     hsv = cv2.cvtColor(panel_region, cv2.COLOR_RGB2HSV)
 
-    # --- Unified red mask (covers both dark and light reds) ---
-    red_mask = _build_red_mask(hsv)
+    # Determine element type from preset
+    preset = CHART_COLOR_PRESETS.get(target_color, CHART_COLOR_PRESETS["red"])
+    element_type = preset.get("element_type", "fill")
 
-    # --- Separate vertical lines from scattered dots ---
-    # Preserve only long vertical red strokes as intervals. This prevents
-    # stacked red scatter dots from becoming false class intervals.
-    vertical_kernel = np.ones((35, 3), np.uint8)
-    lines_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, vertical_kernel)
-    lines_mask = cv2.morphologyEx(lines_mask, cv2.MORPH_CLOSE, np.ones((13, 3), np.uint8))
+    # Build colour mask
+    color_mask = _build_color_mask(hsv, target_color)
 
-    # Dots: remove a slightly dilated version of the interval lines.
+    # Morphological kernel sizing adapts to whether we expect lines or fill
+    if element_type == "line":
+        # Narrower vertical kernel for line-only colours
+        vertical_kernel = np.ones((25, 2), np.uint8)
+        close_kernel = np.ones((9, 2), np.uint8)
+    else:
+        vertical_kernel = np.ones((35, 3), np.uint8)
+        close_kernel = np.ones((13, 3), np.uint8)
+
+    lines_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, vertical_kernel)
+    lines_mask = cv2.morphologyEx(lines_mask, cv2.MORPH_CLOSE, close_kernel)
+
     thick_lines = cv2.dilate(lines_mask, np.ones((7, 7), np.uint8), iterations=1)
-    dots_mask = cv2.subtract(red_mask, thick_lines)
+    dots_mask = cv2.subtract(color_mask, thick_lines)
     dots_mask = cv2.morphologyEx(dots_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
 
-    # --- Step 1: Extract intervals from vertical red lines ---
-    intervals = _extract_intervals_from_lines(lines_mask, panel, ph, pw)
+    # Step 1: Extract intervals from vertical lines
+    intervals = _extract_intervals_from_lines(
+        lines_mask, panel, ph, pw, color_name=target_color,
+    )
     result.extend(intervals)
 
-    # --- Step 2: Extract scatter points ---
-    points = _extract_points_from_dots(dots_mask, intervals, panel, ph, pw)
+    # Step 2: Extract scatter points
+    points = _extract_points_from_dots(
+        dots_mask, intervals, panel, ph, pw, color_name=target_color,
+    )
     result.extend(points)
 
     return _deduplicate_chart_data(result)
 
 
-def _build_red_mask(hsv) -> "np.ndarray":
-    """Create a unified mask for red pixels (red wraps around HSV hue 0/180)."""
-    import cv2
-    import numpy as np
-
-    # Red in HSV: wraps around 0. Two ranges needed.
-    lower1 = np.array([0, 40, 40], dtype=np.uint8)
-    upper1 = np.array([12, 255, 255], dtype=np.uint8)
-    lower2 = np.array([168, 40, 40], dtype=np.uint8)
-    upper2 = np.array([180, 255, 255], dtype=np.uint8)
-
-    mask1 = cv2.inRange(hsv, lower1, upper1)
-    mask2 = cv2.inRange(hsv, lower2, upper2)
-    return cv2.bitwise_or(mask1, mask2)
-
-
 def _extract_intervals_from_lines(
     lines_mask, panel: dict, ph: int, pw: int,
+    *,
+    color_name: str = "red",
 ) -> list[dict]:
-    """Find vertical red line segments, cluster by x, assign classes."""
+    """Find vertical line segments, cluster by x, assign classes."""
     import cv2
     import numpy as np
 
@@ -456,37 +1254,30 @@ def _extract_intervals_from_lines(
     if not contours:
         return []
 
-    # Collect vertical line segments: tall, thin contours
     segments = []
     for cnt in contours:
         cx, cy, cw, ch = cv2.boundingRect(cnt)
         min_line_height = max(45, int(ph * 0.035))
         if ch < min_line_height or cw > ch * 0.45:
-            continue  # not tall enough, or too wide
+            continue
         M = cv2.moments(cnt)
         if M["m00"] == 0:
             continue
         cx_center = int(M["m10"] / M["m00"])
         cy_center = int(M["m01"] / M["m00"])
-        segments.append({
-            "x": cx_center,
-            "y0": cy,
-            "y1": cy + ch,
-        })
+        segments.append({"x": cx_center, "y0": cy, "y1": cy + ch})
 
     if len(segments) < 2:
         return []
 
-    # Cluster by x-position (DBSCAN-like: group nearby x-centers)
     segments.sort(key=lambda s: s["x"])
     clusters = [[segments[0]]]
     for seg in segments[1:]:
-        if seg["x"] - clusters[-1][-1]["x"] <= 8:  # 8px max gap within a line
+        if seg["x"] - clusters[-1][-1]["x"] <= 8:
             clusters[-1].append(seg)
         else:
             clusters.append([seg])
 
-    # Filter clusters: must have at least 2 segments or one long segment
     valid_clusters = []
     for cl in clusters:
         total_height = sum(s["y1"] - s["y0"] for s in cl)
@@ -496,33 +1287,22 @@ def _extract_intervals_from_lines(
     if len(valid_clusters) < 2:
         return []
 
-    # If we expect 6 classes (0..5), we should have ~7 boundary lines
-    # (one per class plus top/bottom). But in practice the chart has
-    # 6 vertical red lines, one per class. Each line spans the class depth.
-    # Assign class 0 to the leftmost, class 5 to the rightmost.
     valid_clusters.sort(key=lambda cl: sum(s["x"] for s in cl) / len(cl))
 
-    # Use panel y_min/y_max from the panel or the actual y-extent of lines
     y_min_data = panel.get("y_min", 0.0)
     y_max_data = panel.get("y_max", 30.0)
+    calibration = panel.get("_calibration", {})
 
     intervals = []
     for idx, cl in enumerate(valid_clusters):
         avg_x = sum(s["x"] for s in cl) / len(cl)
-
-        # Determine y-extent from all segments in this cluster
         line_top = min(s["y0"] for s in cl)
         line_bot = max(s["y1"] for s in cl)
-
-        # The y-extent tells us the depth range for this class.
-        # Map pixel y to data depth using panel dimensions.
-        depth_top = y_min_data + (line_top / ph) * (y_max_data - y_min_data)
-        depth_bot = y_min_data + (line_bot / ph) * (y_max_data - y_min_data)
-
-        cls_val = idx  # 0, 1, 2, 3, 4, 5
+        depth_top = pixel_to_data(line_top, calibration, panel, ph)
+        depth_bot = pixel_to_data(line_bot, calibration, panel, ph)
+        cls_val = idx
         if cls_val > 5:
             break
-
         intervals.append({
             "type": "interval",
             "panel_id": panel["id"],
@@ -531,6 +1311,7 @@ def _extract_intervals_from_lines(
             "end_depth": round(max(depth_top, depth_bot), 1),
             "depth_tolerance": _depth_tolerance(panel),
             "pixel_x": round(avg_x, 1),
+            "color": color_name,
         })
 
     return intervals
@@ -538,8 +1319,10 @@ def _extract_intervals_from_lines(
 
 def _extract_points_from_dots(
     dots_mask, intervals: list[dict], panel: dict, ph: int, pw: int,
+    *,
+    color_name: str = "red",
 ) -> list[dict]:
-    """Extract red scatter points and assign class from nearest x interval."""
+    """Extract coloured scatter points and assign class from nearest x interval."""
     import cv2
     import numpy as np
 
@@ -547,16 +1330,9 @@ def _extract_points_from_dots(
     if not contours or not intervals:
         return []
 
-    # Build class boundary map from intervals
-    # Each interval has a class and depth range. We assign dots to classes
-    # based on which interval they fall into (by depth).
-    # But the chart also has class determined by x-position. So we also
-    # need x-based class assignment.
-    # Strategy: assign class based on which interval's y-range the dot
-    # falls into. If there's a tie, use nearest.
-
     y_min_data = panel.get("y_min", 0.0)
     y_max_data = panel.get("y_max", 30.0)
+    calibration = panel.get("_calibration", {})
     class_centers = [
         (float(inv.get("pixel_x", 0.0)), inv["class"])
         for inv in intervals
@@ -574,8 +1350,7 @@ def _extract_points_from_dots(
         pcx = int(M["m10"] / M["m00"])
         pcy = int(M["m01"] / M["m00"])
 
-        # Convert pixel y to depth
-        depth = y_min_data + (pcy / ph) * (y_max_data - y_min_data)
+        depth = pixel_to_data(pcy, calibration, panel, ph)
         if class_centers:
             nearest = sorted(class_centers, key=lambda item: abs(item[0] - pcx))
             _nearest_x, best_class = nearest[0]
@@ -593,10 +1368,10 @@ def _extract_points_from_dots(
                 "depth": round(depth, 1),
                 "depth_tolerance": _point_depth_tolerance(panel),
                 "pixel_x": pcx,
+                "color": color_name,
             })
             continue
 
-        # Find class: which interval's depth range contains this point?
         best_class = None
         best_overlap = -1
         for inv in intervals:
@@ -607,9 +1382,7 @@ def _extract_points_from_dots(
                 if overlap > best_overlap:
                     best_overlap = overlap
                     best_class = inv["class"]
-
         if best_class is None:
-            # No interval contains this depth — assign to nearest
             min_dist = float("inf")
             for inv in intervals:
                 sd = inv["start_depth"]
@@ -627,18 +1400,14 @@ def _extract_points_from_dots(
             "depth": round(depth, 1),
             "class_candidates": [best_class],
             "depth_tolerance": _point_depth_tolerance(panel),
+            "color": color_name,
         })
 
     return points
 
 
 def _depth_tolerance(panel: dict) -> float:
-    """Depth uncertainty for photographed chart intervals.
-
-    The value is intentionally explicit in the JSON so a downstream LLM can
-    treat chart readings as measured facts with error bars, not fake exact
-    numbers.
-    """
+    """Depth uncertainty for chart intervals (explicit error bars)."""
     y_span = abs(float(panel.get("y_max", 30.0)) - float(panel.get("y_min", 0.0)))
     return round(max(0.3, min(0.75, y_span * 0.025)), 2)
 
@@ -676,16 +1445,15 @@ def _deduplicate_chart_data(data: list[dict]) -> list[dict]:
 
 
 def _merge_intervals(intervals: list[dict]) -> list[dict]:
-    """Merge overlapping intervals for the same (panel_id, class)."""
     if not intervals:
         return []
     groups: dict[tuple, list[tuple[float, float]]] = {}
     for inv in intervals:
-        key = (inv.get("panel_id", ""), inv.get("class", 0))
+        key = (inv.get("panel_id", ""), inv.get("class", 0), inv.get("color", ""))
         groups.setdefault(key, []).append((inv["start_depth"], inv["end_depth"]))
 
     result = []
-    for (panel_id, cls), ranges in groups.items():
+    for (panel_id, cls, color), ranges in groups.items():
         ranges.sort()
         merged = [list(ranges[0])]
         for start, end in ranges[1:]:
@@ -693,6 +1461,12 @@ def _merge_intervals(intervals: list[dict]) -> list[dict]:
                 merged[-1][1] = max(merged[-1][1], end)
             else:
                 merged.append([start, end])
+        tol = max((float(inv.get("depth_tolerance", 0.0))
+                   for inv in intervals
+                   if inv.get("panel_id", "") == panel_id
+                   and inv.get("class", 0) == cls
+                   and inv.get("color", "") == color),
+                  default=0.0)
         for s, e in merged:
             result.append({
                 "type": "interval",
@@ -700,7 +1474,8 @@ def _merge_intervals(intervals: list[dict]) -> list[dict]:
                 "class": cls,
                 "start_depth": round(s, 1),
                 "end_depth": round(e, 1),
-                "depth_tolerance": max((float(inv.get("depth_tolerance", 0.0)) for inv in intervals if inv.get("panel_id", "") == panel_id and inv.get("class", 0) == cls), default=0.0),
+                "depth_tolerance": tol,
+                "color": color,
             })
     return result
 
@@ -711,7 +1486,8 @@ def _dedup_points(points: list[dict]) -> list[dict]:
     seen: set[tuple] = set()
     result = []
     for p in points:
-        key = (p.get("panel_id", ""), p.get("class", 0), round(p.get("depth", 0), 0))
+        key = (p.get("panel_id", ""), p.get("class", 0),
+               round(p.get("depth", 0), 0), p.get("color", ""))
         if key not in seen:
             seen.add(key)
             result.append(p)

@@ -1,0 +1,73 @@
+{
+  "source": "documents/multi_column_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "eng",
+    "page_count": 2
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 595.0,
+      "height": 842.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "The Innovation Quarterly",
+          "confidence": 0.99,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "AI Breakthroughs in Drug Discovery",
+          "confidence": 0.97,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Recent advances in deep learning have dramatically accelerated the drug discovery pipeline. AlphaFold's protein structure predictions are now being used by over 1.9 million researchers worldwide, cutting years off the traditional structure determination process. Combined with generative chemistry models, AI-powered pipelines can now screen billions of virtual compounds in days rather than years.",
+          "confidence": 0.94,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Several pharmaceutical companies have reported that AI-assisted lead optimization has reduced preclinical development timelines by 30-40%. The integration of multimodal models—combining genomic, proteomic, and chemical data—promises even greater efficiency gains in the coming years.",
+          "confidence": 0.93,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "Quantum Computing Reaches Milestone",
+          "confidence": 0.97,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "IBM's latest quantum processor, featuring 1,121 qubits, has demonstrated quantum advantage on a real-world optimization problem for the first time. The team solved a complex supply-chain routing problem in under 3 minutes, a task that would have taken classical supercomputers approximately 6 hours.",
+          "confidence": 0.93,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Meanwhile, researchers at MIT have developed a new error correction code that reduces the overhead for fault-tolerant quantum computing by 40%. This breakthrough brings practical quantum computing closer to reality, with potential applications in cryptography, materials science, and climate modeling.",
+          "confidence": 0.92,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "Regulatory Updates",
+          "confidence": 0.97,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "The EU AI Act came into full effect in Q1 2024, establishing the world's first comprehensive regulatory framework for artificial intelligence. Companies developing high-risk AI systems must now comply with transparency, documentation, and human oversight requirements. Early compliance data suggests that most large tech firms had already aligned their practices with the Act's provisions.",
+          "confidence": 0.90,
+          "engine": "pdf"
+        }
+      ]
+    }
+  ]
+}

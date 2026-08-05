@@ -1,0 +1,80 @@
+{
+  "source": "documents/chart_heavy_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "eng",
+    "page_count": 2
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 841.0,
+      "height": 595.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "Quarterly Performance Dashboard — FY2024",
+          "confidence": 0.99,
+          "engine": "pdf"
+        },
+        {
+          "type": "figure",
+          "text": "Revenue by Region (Stacked Bar Chart)",
+          "confidence": 0.88,
+          "engine": "chart_analysis",
+          "metadata": {
+            "chart_data": [
+              {"type": "bar", "series": "North America", "Q1": 12.5, "Q2": 14.2, "Q3": 15.8, "Q4": 18.1},
+              {"type": "bar", "series": "Europe", "Q1": 8.3, "Q2": 9.1, "Q3": 10.5, "Q4": 11.2},
+              {"type": "bar", "series": "Asia Pacific", "Q1": 6.7, "Q2": 7.3, "Q3": 8.9, "Q4": 9.5}
+            ]
+          }
+        },
+        {
+          "type": "figure",
+          "text": "Monthly Active Users Growth (Line Chart)",
+          "confidence": 0.86,
+          "engine": "chart_analysis",
+          "metadata": {
+            "chart_data": [
+              {"type": "line", "series": "MAU (millions)", "Jan": 2.3, "Feb": 2.5, "Mar": 2.8, "Apr": 3.1, "May": 3.4, "Jun": 3.8, "Jul": 4.1, "Aug": 4.3, "Sep": 4.6, "Oct": 4.9, "Nov": 5.2, "Dec": 5.5}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "width": 841.0,
+      "height": 595.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "table",
+          "text": "Metric | Q1 | Q2 | Q3 | Q4 | YoY Growth\nRevenue ($M) | 27.5 | 30.6 | 35.2 | 38.8 | 18.5%\nGross Margin | 42.1% | 43.5% | 44.2% | 45.0% | +2.9pp\nNet Income ($M) | 5.2 | 6.1 | 7.3 | 8.5 | 22.1%\nCash Flow ($M) | 8.1 | 9.4 | 10.2 | 11.8 | 15.3%",
+          "confidence": 0.93,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 5,
+            "cols": 6,
+            "headers": ["Metric", "Q1", "Q2", "Q3", "Q4", "YoY Growth"]
+          }
+        },
+        {
+          "type": "figure",
+          "text": "Customer Satisfaction Scores (Gauge Chart)",
+          "confidence": 0.80,
+          "engine": "chart_analysis",
+          "metadata": {
+            "chart_data": [
+              {"type": "gauge", "metric": "CSAT", "value": 87, "max": 100},
+              {"type": "gauge", "metric": "NPS", "value": 42, "max": 100}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

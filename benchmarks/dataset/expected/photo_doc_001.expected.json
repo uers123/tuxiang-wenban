@@ -1,0 +1,51 @@
+{
+  "source": "documents/photo_doc_001.jpg",
+  "metadata": {
+    "input_type": "image",
+    "ocr_language": "chi_sim+eng",
+    "perspective_correction": true
+  },
+  "warnings": [
+    "Perspective correction applied; some text near edges may have reduced accuracy."
+  ],
+  "pages": [
+    {
+      "number": 1,
+      "width": 1920.0,
+      "height": 2560.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "项目进度报告",
+          "confidence": 0.72,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "项目名称: 智慧城市数据平台建设\n负责人: 张伟\n报告日期: 2024年6月15日",
+          "confidence": 0.65,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "一、本月完成工作\n1. 完成数据采集模块开发与测试\n2. 部署大数据存储集群（3节点）\n3. 前端可视化原型开发进度达到60%\n4. 与市交通局完成数据对接协议签署",
+          "confidence": 0.60,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "二、下月计划\n1. 完成前端可视化完整开发\n2. 开展系统集成测试\n3. 准备项目中期汇报材料",
+          "confidence": 0.58,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "三、存在风险\n数据安全合规审查尚未完成，可能影响上线时间。",
+          "confidence": 0.62,
+          "engine": "ocr"
+        }
+      ]
+    }
+  ]
+}

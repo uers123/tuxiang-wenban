@@ -1,5 +1,12 @@
 # doc-textify
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.4.0-green.svg)](https://github.com/uers123/tuxiang-wenban/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+
+> 离线、CPU-only、免视觉大模型的 PDF / 图片 → Markdown / LLM 文本转换器
+
 ## 项目介绍
 
 `doc-textify` 是一个面向文本大模型的图片/PDF 文本化预处理器。它的目标是把 PDF、扫描件、截图、拍照文档和部分图表转换成大模型容易读取的 Markdown、TXT、低 Token 文本协议和 JSON 结构化数据。
@@ -31,12 +38,17 @@ PDF / Image -> doc-textify -> Markdown / TXT / LLM Text / JSON -> Text-only LLM
 
 ### 核心能力
 
-- OCR 识别：支持中文、英文和中英混排。
-- PDF 解析：优先使用原生文字层，必要时走 OCR。
+- OCR 识别：支持中文、英文和中英混排（内置便携版 Tesseract，项目自包含）。
+- PDF 解析：优先使用原生文字层，必要时走 OCR（`--force-ocr` 处理劣质文字层扫描件）。
 - 版面分析：识别标题、段落、列表、页眉页脚和基础阅读顺序。
-- 图表文本化：提取面板、轴标签、区间、散点和结构化 `chart_data`。
+- **双栏阅读顺序**：自动检测双栏版面（v0.4.0），修复扫描论文左右栏交叉问题。
+- **公式检测**：识别扫描件中的公式碎片与块（v0.4.0），支持 LaTeX 输出。
+- 图表文本化：提取面板、轴标签、区间、散点和结构化 `chart_data`（含无彩色黑白图的结构回退）。
 - 误差表达：图表读数可输出 `+/-` 误差范围，避免伪装成不可靠的精确值。
 - 低 Token 表达：把图片中的有效事实压缩为大模型更容易处理的文本。
+- **RAG 就绪分块**：`--rag-ready` 输出带块标记、页号上下文和标题层级的检索友好文本。
+- **DeepSeek 优化格式**：`--format deepseek` 输出适配 DeepSeek tokenizer 的紧凑格式。
+- **基准评测**：`doc-textify-bench` 内置 Benchmark 框架，用 expected JSON 量化提取质量。
 
 ### 项目边界
 

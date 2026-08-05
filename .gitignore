@@ -14,3 +14,20 @@ tu_xiang_wenben/
 *.spec
 sample_input.png
 test_input.png
+
+# Project-local portable binaries (large, not for git)
+tools/
+
+# Benchmark runtime artifacts (regenerable)
+benchmarks/results/
+benchmarks/results_fixed/
+
+# Local test output directories
+outputs_test/
+outputs_test_v2/
+
+# Local test input documents (copies live under benchmarks/dataset/documents/)
+01_Robertson_1990_SBT_CPT.pdf
+
+# Packaging metadata
+*.egg-info/

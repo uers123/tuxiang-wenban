@@ -1,0 +1,136 @@
+{
+  "source": "documents/zh_report_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "chi_sim+eng",
+    "page_count": 3
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 595.0,
+      "height": 842.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "2024年度财务报告",
+          "confidence": 0.98,
+          "engine": "ocr"
+        },
+        {
+          "type": "heading",
+          "text": "一、营收概览",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "本年度公司实现营业收入人民币12.58亿元，同比增长18.3%。净利润达到2.41亿元，同比增长22.1%。毛利率为38.5%，较上年提升1.2个百分点。",
+          "confidence": 0.92,
+          "engine": "ocr"
+        },
+        {
+          "type": "table",
+          "text": "季度 | 营收(亿元) | 净利润(亿元) | 毛利率\nQ1 | 2.85 | 0.52 | 36.2%\nQ2 | 3.12 | 0.61 | 37.8%\nQ3 | 3.45 | 0.68 | 39.1%\nQ4 | 3.16 | 0.60 | 40.5%",
+          "confidence": 0.90,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 5,
+            "cols": 4,
+            "headers": ["季度", "营收(亿元)", "净利润(亿元)", "毛利率"]
+          }
+        },
+        {
+          "type": "heading",
+          "text": "二、收入构成分析",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "主营业务收入占比78.5%，其中产品销售收入6.85亿元，服务收入3.02亿元。其他业务收入占比21.5%，主要包括投资收益和技术授权收入。",
+          "confidence": 0.91,
+          "engine": "ocr"
+        },
+        {
+          "type": "figure",
+          "text": "柱状图: 各季度营收与净利润对比",
+          "confidence": 0.85,
+          "engine": "chart_analysis",
+          "metadata": {
+            "chart_data": [
+              {"type": "bar", "series": "营收", "Q1": 2.85, "Q2": 3.12, "Q3": 3.45, "Q4": 3.16},
+              {"type": "bar", "series": "净利润", "Q1": 0.52, "Q2": 0.61, "Q3": 0.68, "Q4": 0.60}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "width": 595.0,
+      "height": 842.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "三、资产负债情况",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "截至2024年12月31日，公司总资产为45.23亿元，总负债为18.67亿元，资产负债率为41.3%，处于健康水平。",
+          "confidence": 0.93,
+          "engine": "ocr"
+        },
+        {
+          "type": "table",
+          "text": "项目 | 2024年(亿元) | 2023年(亿元) | 变动\n总资产 | 45.23 | 38.56 | +17.3%\n流动资产 | 22.15 | 18.90 | +17.2%\n固定资产 | 18.08 | 15.46 | +16.9%\n无形资产 | 5.00 | 4.20 | +19.0%",
+          "confidence": 0.91,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 5,
+            "cols": 4,
+            "headers": ["项目", "2024年(亿元)", "2023年(亿元)", "变动"]
+          }
+        },
+        {
+          "type": "figure",
+          "text": "饼图: 资产构成比例",
+          "confidence": 0.82,
+          "engine": "chart_analysis",
+          "metadata": {
+            "chart_data": [
+              {"type": "pie", "category": "流动资产", "value": 49.0},
+              {"type": "pie", "category": "固定资产", "value": 40.0},
+              {"type": "pie", "category": "无形资产", "value": 11.0}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "width": 595.0,
+      "height": 842.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "四、风险提示与展望",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "2025年公司将继续推进数字化转型战略，预计全年营收目标15亿元。主要风险包括市场竞争加剧和原材料价格波动。",
+          "confidence": 0.90,
+          "engine": "ocr"
+        }
+      ]
+    }
+  ]
+}

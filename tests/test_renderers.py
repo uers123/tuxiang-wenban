@@ -82,6 +82,35 @@ def test_llm_renderer_compacts_chart_data() -> None:
 
     text = render_llm_text(document)
 
+    assert "DOC_TEXTIFY_LLM_PROTOCOL v2" in text
+    assert "[CHART a]" in text
+    assert "1: 2.0-5.0" in text
+    assert "pts(2:3.5)" in text
+
+
+def test_llm_v1_renderer_compacts_chart_data():
+    from doc_textify.renderers import render_llm_text_v1
+    from doc_textify.models import Document, Page, Block
+
+    page = Page(number=1, width=100, height=200)
+    page.blocks = [
+        Block(
+            type="figure",
+            text="depth/class chart",
+            bbox=(0, 0, 100, 200),
+            confidence=95.0,
+            metadata={
+                "chart_data": [
+                    {"type": "interval", "panel_id": "a", "class": 1, "start_depth": 2.0, "end_depth": 5.0},
+                    {"type": "point", "panel_id": "a", "class": 2, "depth": 3.5},
+                ]
+            },
+        )
+    ]
+    document = Document(source=Path("chart.png"), pages=[page])
+
+    text = render_llm_text_v1(document)
+
     assert "DOC_TEXTIFY_LLM_PROTOCOL v1" in text
     assert "panel a:" in text
     assert "class 1 depth 2.0-5.0" in text

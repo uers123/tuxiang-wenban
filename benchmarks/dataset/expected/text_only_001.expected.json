@@ -1,0 +1,113 @@
+{
+  "source": "documents/text_only_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "eng",
+    "page_count": 3
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "The Evolution of Web Development: From Static Pages to Jamstack",
+          "confidence": 0.99,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "Introduction",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "The landscape of web development has undergone dramatic transformations over the past three decades. What began as simple, static HTML pages served from monolithic servers has evolved into a sophisticated ecosystem of frameworks, APIs, and edge computing platforms. This paper traces the evolution of web development paradigms and examines the forces that have shaped modern practices.",
+          "confidence": 0.97,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "The Static Era (1991–1998)",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "The early web was characterized by hand-crafted HTML pages with inline CSS and minimal JavaScript. Websites were primarily informational, consisting of linked documents with limited interactivity. Development tools were limited to text editors, and deployment involved simple FTP uploads to shared hosting servers.",
+          "confidence": 0.97,
+          "engine": "pdf"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "The Rise of Server-Side Rendering (1998–2010)",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "As web applications grew in complexity, server-side rendering became the dominant paradigm. Technologies like PHP, ASP.NET, Java Servlets, and Ruby on Rails enabled dynamic content generation, database integration, and user authentication. This era saw the emergence of content management systems like WordPress, Drupal, and Joomla, which democratized web publishing.",
+          "confidence": 0.96,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "The Single Page Application Revolution (2010–2018)",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "The introduction of AngularJS, React, and Vue.js marked a paradigm shift toward client-side rendering. Single Page Applications (SPAs) offered fluid user experiences by loading data asynchronously and updating the DOM dynamically. However, this approach introduced challenges with search engine optimization and initial load performance.",
+          "confidence": 0.96,
+          "engine": "pdf"
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "Jamstack and the Modern Web (2018–Present)",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Jamstack represents a modern approach to web development that emphasizes pre-rendering, decoupling the frontend from the backend, and leveraging APIs and serverless functions. Tools like Next.js, Gatsby, Astro, and Nuxt.js bridge the gap between static site generation and dynamic functionality through incremental static regeneration and edge functions.",
+          "confidence": 0.97,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "Conclusion",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Web development continues to evolve toward greater abstraction, better developer experience, and improved end-user performance. The Jamstack philosophy of pre-rendering and API-driven architecture represents the current state of the art, but edge computing and WebAssembly hint at the next frontier.",
+          "confidence": 0.96,
+          "engine": "pdf"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "name": "doc-textify benchmark v1",
+  "version": "1.0.0",
+  "description": "Diverse benchmark suite for evaluating doc-textify output quality against reference outputs (DeepSeek-OCR, human annotation, or ground-truth document sources).",
+  "documents": [
+    {
+      "id": "robertson_1990_sbt",
+      "path": "documents/robertson_1990_sbt.pdf",
+      "language": "en",
+      "type": "academic_paper",
+      "features": ["chart", "formula", "two_column", "heading"],
+      "difficulty": "hard",
+      "ocr_required": true,
+      "ocr_lang": "eng",
+      "notes": "Robertson (1990) 'Soil classification using the cone penetration test', Canadian Geotechnical Journal 27:151-158. Scanned paper with degraded native text layer (garbled embedded text, e.g. 'P. K. ROBERWN') requiring --force-ocr; two-column layout, formulas, and Fig. 3 SBT charts (Q-F and Q-Bq) that are currently NOT extracted as figure/chart blocks."
+    },
+    {
+      "id": "zh_report_001",
+      "path": "documents/zh_report_001.pdf",
+      "language": "zh",
+      "type": "report",
+      "features": ["table", "chart", "heading"],
+      "difficulty": "medium",
+      "notes": "Chinese financial report with tables and bar charts"
+    },
+    {
+      "id": "en_paper_001",
+      "path": "documents/en_paper_001.pdf",
+      "language": "en",
+      "type": "academic_paper",
+      "features": ["formula", "heading", "multi_column"],
+      "difficulty": "hard",
+      "notes": "English academic paper with LaTeX formulas and two-column layout"
+    },
+    {
+      "id": "scanned_form_001",
+      "path": "documents/scanned_form_001.pdf",
+      "language": "en",
+      "type": "form",
+      "features": ["table", "form_fields"],
+      "difficulty": "hard",
+      "notes": "Scanned government form with checkboxes and fill-in fields"
+    },
+    {
+      "id": "photo_doc_001",
+      "path": "documents/photo_doc_001.jpg",
+      "language": "zh",
+      "type": "photographed",
+      "features": ["perspective_warp", "uneven_lighting"],
+      "difficulty": "hard",
+      "notes": "Photograph of a printed document taken with a smartphone under uneven lighting"
+    },
+    {
+      "id": "chart_heavy_001",
+      "path": "documents/chart_heavy_001.pdf",
+      "language": "en",
+      "type": "chart_page",
+      "features": ["chart", "table"],
+      "difficulty": "medium",
+      "notes": "Chart-heavy PDF page with multiple bar charts, line graphs, and data tables"
+    },
+    {
+      "id": "duibitu",
+      "path": "documents/duibitu.jpg",
+      "language": "zh",
+      "type": "chart_page",
+      "features": ["chart", "scatter", "multi_panel"],
+      "difficulty": "hard",
+      "notes": "Side-by-side Chinese depth/class comparison charts from a photographed page"
+    },
+    {
+      "id": "mixed_script_001",
+      "path": "documents/mixed_script_001.pdf",
+      "language": "mixed",
+      "type": "report",
+      "features": ["heading", "table", "mixed_script"],
+      "difficulty": "medium",
+      "notes": "Bilingual Chinese-English technical report with mixed CJK and Latin text"
+    },
+    {
+      "id": "table_heavy_001",
+      "path": "documents/table_heavy_001.pdf",
+      "language": "en",
+      "type": "spreadsheet",
+      "features": ["table", "merged_cells"],
+      "difficulty": "medium",
+      "notes": "PDF containing a large spreadsheet with merged cells, row spans, and fully numeric columns"
+    },
+    {
+      "id": "text_only_001",
+      "path": "documents/text_only_001.pdf",
+      "language": "en",
+      "type": "article",
+      "features": ["heading", "paragraph"],
+      "difficulty": "easy",
+      "notes": "Clean single-column English article — baseline for text-extraction quality"
+    },
+    {
+      "id": "formula_doc_001",
+      "path": "documents/formula_doc_001.pdf",
+      "language": "en",
+      "type": "academic_paper",
+      "features": ["formula", "heading"],
+      "difficulty": "hard",
+      "notes": "Mathematics paper with heavy inline and display formula content"
+    },
+    {
+      "id": "multi_column_001",
+      "path": "documents/multi_column_001.pdf",
+      "language": "en",
+      "type": "newsletter",
+      "features": ["heading", "paragraph", "multi_column"],
+      "difficulty": "medium",
+      "notes": "Three-column newsletter layout with images and pull quotes"
+    }
+  ]
+}

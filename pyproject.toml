@@ -4,17 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doc-textify"
-version = "0.3.1"
-description = "Convert PDFs and images into compact AI-readable text plus JSON metadata without vision LLMs."
+version = "0.4.0"
+description = "Offline PDF/image to Markdown & LLM-ready text converter. CPU-only OCR with layout recovery, two-column reading order, formula & chart detection, table extraction, RAG-ready chunking — no vision LLMs, no GPU, no cloud."
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "doc-textify" }]
+authors = [{ name = "doc-textify contributors" }]
+license = "MIT"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Markup",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
 dependencies = [
     "pypdf>=4",
     "Pillow>=10",
     "pytesseract>=0.3.10",
     "pypdfium2>=4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/uers123/tuxiang-wenban"
+Repository = "https://github.com/uers123/tuxiang-wenban"
+Issues = "https://github.com/uers123/tuxiang-wenban/issues"
 
 [project.optional-dependencies]
 chart = ["opencv-python-headless>=4.8"]
@@ -24,6 +43,7 @@ all = ["doc-textify[chart]"]
 [project.scripts]
 doc-textify = "doc_textify.cli:main"
 doc-textify-eval = "scripts.evaluate_textification:main"
+doc-textify-bench = "scripts.benchmark:main"
 
 [tool.setuptools.packages.find]
 include = ["doc_textify*"]

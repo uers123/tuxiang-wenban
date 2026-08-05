@@ -1,0 +1,79 @@
+{
+  "source": "documents/scanned_form_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "eng",
+    "page_count": 1
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "APPLICATION FOR EMPLOYMENT",
+          "confidence": 0.98,
+          "engine": "ocr"
+        },
+        {
+          "type": "heading",
+          "text": "Personal Information",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "Full Name: ____________________ Date of Birth: ____/____/____\nAddress: _____________________________________________\nPhone: ________________ Email: ________________________",
+          "confidence": 0.88,
+          "engine": "ocr"
+        },
+        {
+          "type": "heading",
+          "text": "Education",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "table",
+          "text": "Institution | Location | Degree | Year | GPA\n__________________ | _______________ | ________ | ____ | ____\n__________________ | _______________ | ________ | ____ | ____\n__________________ | _______________ | ________ | ____ | ____",
+          "confidence": 0.82,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 5,
+            "cols": 5,
+            "headers": ["Institution", "Location", "Degree", "Year", "GPA"],
+            "has_empty_cells": true
+          }
+        },
+        {
+          "type": "heading",
+          "text": "Employment History",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "table",
+          "text": "Employer | Position | From | To | Salary\n_________________ | ______________ | ________ | ________ | ________\n_________________ | ______________ | ________ | ________ | ________",
+          "confidence": 0.80,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 3,
+            "cols": 5,
+            "headers": ["Employer", "Position", "From", "To", "Salary"],
+            "has_empty_cells": true
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": "Signature: ____________________ Date: ____/____/____",
+          "confidence": 0.85,
+          "engine": "ocr"
+        }
+      ]
+    }
+  ]
+}

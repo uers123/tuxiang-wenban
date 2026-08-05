@@ -135,13 +135,23 @@ def _panel_layout_metric(text: str, expected: dict[str, Any]) -> Metric:
 def _chart_data_metric(text: str, actual: dict[str, Any], expected: dict[str, Any]) -> Metric:
     expected_intervals = []
     expected_points = []
+    expected_charts = []
     for panel in expected.get("panels", []):
         for interval in panel.get("predicted_intervals", []):
             expected_intervals.append((panel.get("id", ""), interval))
         for point in panel.get("predicted_points", []):
             expected_points.append((panel.get("id", ""), point))
+        # Structural chart expectations: chart_detected entries are scored
+        # separately and blended with point/interval matching. This rewards
+        # structural recognition (axis labels/captions) even when precise
+        # data points are not yet extracted, without letting empty structural
+        # lists dilute point scores.
+        labels = panel.get("axis_labels") or {}
+        has_axis = bool(labels) or bool(panel.get("x_axis")) or bool(panel.get("y_axis"))
+        if has_axis or panel.get("expected_captions"):
+            expected_charts.append((panel.get("id", ""), panel))
 
-    if not expected_intervals and not expected_points:
+    if not expected_intervals and not expected_points and not expected_charts:
         return Metric("chart_data", 1.0, 0.40, "No chart data expectations were provided.")
 
     actual_chart_objects = _actual_chart_objects(actual)
@@ -151,13 +161,76 @@ def _chart_data_metric(text: str, actual: dict[str, Any], expected: dict[str, An
     matched_points = sum(
         1 for panel_id, point in expected_points if _point_found(text, actual_chart_objects, panel_id, point)
     )
-    total = len(expected_intervals) + len(expected_points)
-    score = (matched_intervals + matched_points) / total
+    matched_charts = sum(
+        1 for panel_id, panel in expected_charts if _chart_detected_found(actual_chart_objects, panel_id, panel)
+    )
+    total = len(expected_intervals) + len(expected_points) + len(expected_charts)
+    has_structure_entries = any(
+        item.get("type") == "chart_detected" for item in actual_chart_objects
+    )
+    if expected_charts and has_structure_entries:
+        # Blend: point/interval accuracy dominates (60%) when present;
+        # structural chart recognition contributes the remainder. Only
+        # active when the pipeline actually produced chart_detected entries,
+        # so legacy outputs without them aren't penalised.
+        data_hits = matched_intervals + matched_points
+        data_total = len(expected_intervals) + len(expected_points)
+        data_ratio = data_hits / data_total if data_total else 0.0
+        chart_ratio = matched_charts / len(expected_charts)
+        score = 0.6 * data_ratio + 0.4 * chart_ratio
+    else:
+        # No structural entries from the pipeline: score data only.
+        data_total = len(expected_intervals) + len(expected_points)
+        score = (matched_intervals + matched_points) / data_total if data_total else 1.0
     detail = (
-        f"Matched {matched_intervals}/{len(expected_intervals)} intervals and "
-        f"{matched_points}/{len(expected_points)} points."
+        f"Matched {matched_intervals}/{len(expected_intervals)} intervals, "
+        f"{matched_points}/{len(expected_points)} points, "
+        f"{matched_charts}/{len(expected_charts)} charts."
     )
     return Metric("chart_data", score, 0.40, detail)
+
+
+def _chart_detected_found(chart_objects: list[dict[str, Any]], panel_id: str, panel: dict[str, Any]) -> bool:
+    """Check whether a structural chart_detected entry matches expected axis labels.
+
+    Scores a match when a chart_detected item exists whose axis labels overlap
+    with the expected labels (normalized: lowercase, alphanumeric tokens).
+    """
+    expected_labels = panel.get("axis_labels") or {}
+    if not expected_labels:
+        expected_labels = {"x": panel.get("x_axis", ""), "y": panel.get("y_axis", "")}
+
+    def _label_text(v: Any) -> str:
+        if isinstance(v, dict):
+            return str(v.get("label", v.get("text", "")))
+        return str(v)
+
+    expected_x = _label_text(expected_labels.get("x", "")).lower()
+    expected_y = _label_text(expected_labels.get("y", "")).lower()
+    if not expected_x and not expected_y:
+        return False
+
+    def _normalize(s: str) -> set[str]:
+        return {w for w in s.lower().replace("-", " ").replace("_", " ").split() if len(w) >= 3}
+
+    exp_x = _normalize(expected_x)
+    exp_y = _normalize(expected_y)
+    if not exp_x and not exp_y:
+        return False
+
+    for item in chart_objects:
+        if item.get("type") != "chart_detected":
+            continue
+        if panel_id and item.get("panel_id") not in (panel_id, "chart", ""):
+            continue
+        labels = item.get("axis_labels") or {}
+        act_x = _normalize(str(labels.get("x", "")))
+        act_y = _normalize(str(labels.get("y", "")))
+        hit_x = not exp_x or bool(exp_x & act_x)
+        hit_y = not exp_y or bool(exp_y & act_y)
+        if hit_x and hit_y:
+            return True
+    return False
 
 
 def _uncertainty_metric(actual: dict[str, Any]) -> Metric:

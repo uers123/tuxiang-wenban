@@ -1,0 +1,169 @@
+{
+  "source": "documents/formula_doc_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "eng",
+    "page_count": 5,
+    "formula_count": 23
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "On the Convergence Properties of Adaptive Gradient Methods in Non-Convex Optimization",
+          "confidence": 0.99,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "We analyze the convergence behavior of adaptive gradient methods, including Adam, RMSProp, and AdaGrad, for non-convex optimization problems arising in deep learning. Our theoretical framework provides provable convergence guarantees under mild assumptions on the objective function and stochastic gradients.",
+          "confidence": 0.96,
+          "engine": "pdf"
+        },
+        {
+          "type": "heading",
+          "text": "1. Preliminaries",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Consider the stochastic optimization problem:",
+          "confidence": 0.95,
+          "engine": "pdf"
+        },
+        {
+          "type": "formula",
+          "text": "min_{x ∈ ℝ^d} f(x) := E_{ξ ∼ D}[F(x; ξ)]",
+          "confidence": 0.88,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "\\min_{x \\in \\mathbb{R}^d} f(x) := \\mathbb{E}_{\\xi \\sim \\mathcal{D}}[F(x; \\xi)]",
+            "label": "eq:problem"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": "where F(x; ξ) is a stochastic component function, and we only have access to a noisy gradient oracle:",
+          "confidence": 0.93,
+          "engine": "pdf"
+        },
+        {
+          "type": "formula",
+          "text": "g_k = ∇F(x_k; ξ_k) + ε_k,   E[ε_k] = 0,   E[∥ε_k∥²] ≤ σ²",
+          "confidence": 0.85,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "g_k = \\nabla F(x_k; \\xi_k) + \\varepsilon_k, \\quad \\mathbb{E}[\\varepsilon_k] = 0, \\quad \\mathbb{E}[\\|\\varepsilon_k\\|^2] \\leq \\sigma^2",
+            "label": "eq:gradient_oracle"
+          }
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "2. Adaptive Gradient Methods",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "The generic update rule for adaptive gradient methods can be expressed as:",
+          "confidence": 0.95,
+          "engine": "pdf"
+        },
+        {
+          "type": "formula",
+          "text": "x_{k+1} = x_k - η_k · m_k ⊘ (√v_k + ϵ)",
+          "confidence": 0.82,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "x_{k+1} = x_k - \\eta_k \\cdot m_k \\oslash (\\sqrt{v_k} + \\epsilon)"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": "where m_k is the first moment estimate (momentum) and v_k is the second moment estimate (adaptive learning rate). For Adam, these are computed as exponentially moving averages:",
+          "confidence": 0.93,
+          "engine": "pdf"
+        },
+        {
+          "type": "formula",
+          "text": "m_k = β₁ m_{k-1} + (1-β₁) g_k,   v_k = β₂ v_{k-1} + (1-β₂) g_k²",
+          "confidence": 0.84,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "m_k = \\beta_1 m_{k-1} + (1-\\beta_1) g_k, \\quad v_k = \\beta_2 v_{k-1} + (1-\\beta_2) g_k^2"
+          }
+        },
+        {
+          "type": "formula",
+          "text": "m̂_k = m_k / (1 - β₁^k),   v̂_k = v_k / (1 - β₂^k)",
+          "confidence": 0.85,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "\\hat{m}_k = m_k / (1 - \\beta_1^k), \\quad \\hat{v}_k = v_k / (1 - \\beta_2^k)"
+          }
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "width": 612.0,
+      "height": 792.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "heading",
+          "text": "3. Main Convergence Theorem",
+          "confidence": 0.98,
+          "engine": "pdf"
+        },
+        {
+          "type": "paragraph",
+          "text": "Under assumptions A1-A4 (smoothness, bounded variance, bounded gradients, and non-negative cost), we establish the following convergence rate:",
+          "confidence": 0.94,
+          "engine": "pdf"
+        },
+        {
+          "type": "formula",
+          "text": "min_{1≤k≤K} E[∥∇f(x_k)∥²] ≤ C₁/K + C₂ σ / √K + C₃ / √K",
+          "confidence": 0.80,
+          "engine": "formula_ocr",
+          "metadata": {
+            "latex": "\\min_{1 \\leq k \\leq K} \\mathbb{E}[\\|\\nabla f(x_k)\\|^2] \\leq \\frac{C_1}{K} + \\frac{C_2 \\sigma}{\\sqrt{K}} + \\frac{C_3}{\\sqrt{K}}"
+          }
+        },
+        {
+          "type": "paragraph",
+          "text": "where C₁, C₂, C₃ are constants depending on the problem parameters and algorithm hyperparameters. This result matches the information-theoretic lower bound for first-order stochastic optimization up to constant factors.",
+          "confidence": 0.92,
+          "engine": "pdf"
+        },
+        {
+          "type": "table",
+          "text": "Method | Convergence Rate | Assumptions | Lipschitz Required\nSGD | O(1/√K + σ/√K) | Smooth + Bounded Var | Yes\nAdam | O(1/√K + σ/√K) | Smooth + Bounded Var | No\nRMSProp | O(1/√K + σ/√K) | Smooth + Bounded Var | No\nAdaGrad | O(1/√K) | Convex + Bounded Grad | No",
+          "confidence": 0.90,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 5,
+            "cols": 4,
+            "headers": ["Method", "Convergence Rate", "Assumptions", "Lipschitz Required"]
+          }
+        }
+      ]
+    }
+  ]
+}

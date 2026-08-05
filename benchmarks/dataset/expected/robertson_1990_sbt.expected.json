@@ -1,0 +1,137 @@
+{
+ "sample_id": "robertson_1990_sbt",
+ "description": "Robertson (1990) 'Soil classification using the cone penetration test', Canadian Geotechnical Journal 27:151-158. Scanned academic paper with degraded native text layer (garbled embedded text such as 'P. K. ROBERWN'), two-column layout, formulas, and the Fig. 3 soil behaviour type (SBT) charts: a Q-F chart (normalized cone resistance vs friction ratio) and a Q-Bq chart (normalized cone resistance vs pore pressure ratio). Requires --force-ocr. Reference is hand-crafted from the actual paper content (title, author, journal, key terminology, Fig. 3 panel structure and zone labels).",
+ "document_meta": {
+  "title": "Soil classification using the cone penetration test",
+  "author": "P. K. Robertson",
+  "journal": "Canadian Geotechnical Journal 27:151-158, 1990",
+  "type": "academic_paper",
+  "language": "en",
+  "pages": 8,
+  "ocr_required": true,
+  "ocr_lang": "eng"
+ },
+ "required_terms": [
+  "soil classification",
+  "cone penetration test",
+  "normalized",
+  "friction ratio",
+  "pore pressure",
+  "bologna",
+  "overconsolidation",
+  "robertson",
+  "canadian geotechnical"
+ ],
+ "panels": [
+  {
+   "id": "a",
+   "caption": "left-hand chart",
+   "x_axis": {
+    "label": "friction ratio",
+    "unit": "%",
+    "min": 0,
+    "max": 8
+   },
+   "y_axis": {
+    "label": "normalized cone resistance",
+    "scale": "log",
+    "min": 1,
+    "max": 1000
+   },
+   "legend": {
+    "zones": [
+     "1 sensitive fine grained",
+     "2 organic soils",
+     "3 clays - clay to silty clay",
+     "4 silt mixtures - clayey silt to silty clay",
+     "5 sand mixtures - silty sand to sandy silt",
+     "6 sands - clean sand to silty sand",
+     "7 gravelly sand to sand",
+     "8 very stiff sand to clayey sand",
+     "9 very stiff fine grained (overconsolidated or cemented)"
+    ]
+   },
+   "predicted_points": [
+    {
+     "class": 2,
+     "depth": 4.0
+    },
+    {
+     "class": 3,
+     "depth": 3.0
+    },
+    {
+     "class": 4,
+     "depth": 2.5
+    },
+    {
+     "class": 5,
+     "depth": 1.8
+    },
+    {
+     "class": 6,
+     "depth": 1.2
+    },
+    {
+     "class": 7,
+     "depth": 0.8
+    }
+   ]
+  },
+  {
+   "id": "b",
+   "caption": "pore pressure ratio chart",
+   "x_axis": {
+    "label": "pore pressure ratio",
+    "unit": "Bq",
+    "min": -0.4,
+    "max": 1.2
+   },
+   "y_axis": {
+    "label": "normalized cone resistance",
+    "scale": "log",
+    "min": 1,
+    "max": 1000
+   },
+   "legend": {
+    "zones": [
+     "1 sensitive fine grained",
+     "2 organic soils",
+     "3 clays - clay to silty clay",
+     "4 silt mixtures - clayey silt to silty clay",
+     "5 sand mixtures - silty sand to sandy silt",
+     "6 sands - clean sand to silty sand",
+     "7 gravelly sand to sand",
+     "8 very stiff sand to clayey sand",
+     "9 very stiff fine grained (overconsolidated or cemented)"
+    ]
+   },
+   "predicted_points": [
+    {
+     "class": 1,
+     "depth": 0.9
+    },
+    {
+     "class": 2,
+     "depth": 0.7
+    },
+    {
+     "class": 3,
+     "depth": 0.5
+    },
+    {
+     "class": 4,
+     "depth": 0.3
+    },
+    {
+     "class": 5,
+     "depth": 0.1
+    },
+    {
+     "class": 6,
+     "depth": 0.0
+    }
+   ]
+  }
+ ]
+}

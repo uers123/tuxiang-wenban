@@ -1,0 +1,66 @@
+{
+  "source": "documents/mixed_script_001.pdf",
+  "metadata": {
+    "input_type": "pdf",
+    "ocr_language": "chi_sim+eng+jpn",
+    "page_count": 1
+  },
+  "warnings": [],
+  "pages": [
+    {
+      "number": 1,
+      "width": 595.0,
+      "height": 842.0,
+      "warnings": [],
+      "blocks": [
+        {
+          "type": "title",
+          "text": "中日韩 AI 技术合作白皮书 2024\nCJK AI Technology Cooperation Whitepaper 2024\n日中韓 AI 技術協力白書 2024",
+          "confidence": 0.95,
+          "engine": "ocr"
+        },
+        {
+          "type": "heading",
+          "text": "1. 项目背景 / Project Background / プロジェクト背景",
+          "confidence": 0.93,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "自 2018 年以来，中日韩三国在人工智能领域的合作不断深化。Since 2018, cooperation among China, Japan, and Korea in the field of artificial intelligence has continued to deepen. 2018年以来、日中韓3カ国のAI分野での協力は継続的に深化している。",
+          "confidence": 0.88,
+          "engine": "ocr"
+        },
+        {
+          "type": "heading",
+          "text": "2. 关键指标 / Key Metrics / 主要指標",
+          "confidence": 0.93,
+          "engine": "ocr"
+        },
+        {
+          "type": "table",
+          "text": "指标 Indicator 指標 | 中国 China 中国 | 日本 Japan 日本 | 韩国 Korea 韓国\nAI 论文数 Papers | 85,420 | 23,150 | 18,760\n专利数 Patents | 42,350 | 11,280 | 9,540\n企业投资 ($B) Investment | 28.5 | 12.3 | 8.7",
+          "confidence": 0.85,
+          "engine": "table_extraction",
+          "metadata": {
+            "rows": 4,
+            "cols": 4,
+            "headers": ["指标 Indicator 指標", "中国 China 中国", "日本 Japan 日本", "韩国 Korea 韓国"]
+          }
+        },
+        {
+          "type": "heading",
+          "text": "3. 技术路线图 / Technology Roadmap / 技術ロードマップ",
+          "confidence": 0.93,
+          "engine": "ocr"
+        },
+        {
+          "type": "paragraph",
+          "text": "大语言模型（LLM）、多模态模型（Multimodal）、AI for Science 是三大优先方向。Large Language Models, Multimodal Models, and AI for Science are the three priority directions. 大規模言語モデル、マルチモーダルモデル、AI for Science が3つの優先方向である。",
+          "confidence": 0.86,
+          "engine": "ocr"
+        }
+      ]
+    }
+  ]
+}

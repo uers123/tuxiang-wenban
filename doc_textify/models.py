@@ -43,8 +43,13 @@ class Page:
     height: float | None = None
     blocks: list[Block] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # When True, ``blocks`` already holds the final reading order (e.g. after
+    # two-column reordering); ``ordered_blocks()`` returns them as-is.
+    _order_finalized: bool = field(default=False, repr=False)
 
     def ordered_blocks(self) -> list[Block]:
+        if self._order_finalized:
+            return list(self.blocks)
         return sorted(self.blocks, key=_reading_key)
 
     def to_dict(self) -> dict[str, Any]:
