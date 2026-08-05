@@ -14,8 +14,12 @@ Pillow-only analysis when OpenCV is not available (limited capability).
 
 from __future__ import annotations
 
+import csv
+import io
 import math
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -354,6 +358,14 @@ def _chart_structure_fallback(
             ocr_blocks, x0, y0, x1, y1,
             h_inside=h_inside, v_inside=v_inside,
         ))
+        # Data-point-level extraction: dark scatter marks inside the plot
+        # area, mapped to data coordinates and classified into zones.
+        # Best-effort — never fails the structure fallback.
+        try:
+            point_entries = _extract_chart_points(color_image, ocr_blocks, x0, y0, x1, y1)
+            entries.extend(point_entries)
+        except Exception:
+            pass
 
     # If clustering produced no usable region but we clearly have both
     # long-H and long-V lines, emit one entry for the union bounding box.
@@ -369,6 +381,409 @@ def _chart_structure_fallback(
             ))
 
     return entries
+
+
+# ---------------------------------------------------------------------------
+# Data-point-level chart extraction (structure fallback path)
+# ---------------------------------------------------------------------------
+
+#: Fallback zone-anchor tables for the standard Robertson-style soil
+#: behaviour type (SBT) classification chart layout, expressed as plot
+#: fractions (x_rel, y_frac) so they transfer between figures with the
+#: same chart geometry.  Used when in-plot zone-number OCR fails to
+#: produce enough anchors (common on degraded scans).  Positions follow
+#: the published chart: Q vs friction ratio (left-hand panel, log x-axis)
+#: and Q vs pore-pressure ratio (right-hand panel, linear x-axis).
+_SBT_ZONE_ANCHORS: dict[str, dict[int, tuple[float, float]]] = {
+    "friction": {
+        1: (0.186, 0.836), 2: (0.945, 0.896), 3: (0.981, 0.696),
+        4: (0.486, 0.665), 5: (0.361, 0.523), 6: (0.219, 0.364),
+        7: (0.180, 0.095), 8: (0.820, 0.106), 9: (1.006, 0.171),
+    },
+    "pore_pressure": {
+        1: (0.887, 0.827), 2: (0.525, 0.900), 3: (0.503, 0.687),
+        4: (0.282, 0.486), 5: (0.258, 0.415), 6: (0.167, 0.253),
+        7: (0.159, 0.098),
+    },
+}
+
+#: Plot-area inset used to exclude axis frames / tick marks from the
+#: data-mark search.
+_PLOT_INSET = 6
+#: Scatter mark size bounds (connected-component area, in pixels).
+_MARK_AREA_MIN = 5
+_MARK_AREA_MAX = 400
+
+
+def _extract_chart_points(
+    color_image, ocr_blocks, x0: int, y0: int, x1: int, y1: int,
+) -> list[dict[str, Any]]:
+    """Extract data-point-level entries (``type="point"``) for a detected
+    chart region produced by the structure fallback.
+
+    Pipeline:
+      1. Determine the chart kind from the x-axis label (friction-ratio
+         chart → panel ``a``, log x; pore-pressure-ratio chart → panel
+         ``b``, linear x).  Unknown kinds yield no points.
+      2. Calibrate the x axis from OCR'd tick labels below the frame.
+      3. Locate zone-number anchors: in-plot digit OCR, falling back to
+         the SBT layout table (plot fractions).
+      4. Detect dark scatter marks inside the plot area (connected
+         components after long-line removal).
+      5. Emit one ``point`` per mark: ``depth`` = x-axis data value,
+         ``class`` = nearest zone anchor, ``class_candidates`` = up to
+         three nearest zones (boundary ambiguity).
+
+    Best-effort: returns ``[]`` on any failure.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return []
+
+    img_w, img_h = color_image.size
+    rw, rh = x1 - x0, y1 - y0
+    if rw < 80 or rh < 80:
+        return []
+
+    # ── 1. chart kind / panel id from the x-axis label ──────────────────
+    x_label, _ = _structure_axis_labels(ocr_blocks, (x0, y0, x1, y1))
+    upper = (x_label or "").upper()
+    if "FRICTION" in upper:
+        kind, panel_id, log_axis = "friction", "a", True
+    elif "PORE" in upper or "PRESSURE" in upper:
+        kind, panel_id, log_axis = "pore_pressure", "b", False
+    else:
+        return []
+
+    # Plot area (inset from the axis frame)
+    px0, py0 = x0 + _PLOT_INSET, y0 + _PLOT_INSET
+    px1, py1 = x1 - _PLOT_INSET, y1 - _PLOT_INSET
+    if px1 <= px0 or py1 <= py0:
+        return []
+    plot_w, plot_h = px1 - px0, py1 - py0
+
+    # ── 2. x-axis calibration from tick labels ──────────────────────────
+    calib = _calibrate_axis_ticks(color_image, (px0, py0, px1, py1), log_axis)
+    if calib is None:
+        return []
+
+    # ── 3. zone anchors ─────────────────────────────────────────────────
+    anchors = _find_zone_anchors(color_image, kind, (px0, py0, px1, py1))
+    if len(anchors) < 3:
+        return []
+
+    # ── 4. data marks ───────────────────────────────────────────────────
+    img = np.array(color_image)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    plot = gray[py0:py1, px0:px1]
+    _, bw = cv2.threshold(plot, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    hk = cv2.getStructuringElement(cv2.MORPH_RECT, (max(30, plot_w // 10), 1))
+    vk = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(30, plot_h // 10)))
+    h_lines = cv2.morphologyEx(bw, cv2.MORPH_OPEN, hk)
+    v_lines = cv2.morphologyEx(bw, cv2.MORPH_OPEN, vk)
+    lines = cv2.dilate(cv2.bitwise_or(h_lines, v_lines), np.ones((5, 5), np.uint8))
+    marks = cv2.subtract(bw, lines)
+
+    num, _labels, stats, cents = cv2.connectedComponentsWithStats(marks, 8)
+    points: list[dict[str, Any]] = []
+    for i in range(1, num):
+        mx, my, mw, mh, area = stats[i]
+        if area < _MARK_AREA_MIN or area > _MARK_AREA_MAX:
+            continue
+        if mw < 3 or mh < 3:
+            continue
+        # exclude axis ticks / frame residue near the plot edges
+        if mx < 8 or my < 8 or mx + mw > plot_w - 8 or my + mh > plot_h - 8:
+            continue
+        cx = px0 + int(cents[i][0])
+        cy = py0 + int(cents[i][1])
+
+        depth = _tick_to_data(calib, cx, log_axis)
+        if depth is None:
+            continue
+        best = sorted(
+            ((math.hypot(cx - ax, cy - ay), z) for z, (ax, ay) in anchors.items()),
+            key=lambda t: t[0],
+        )
+        klass = best[0][1]
+        candidates = [z for _, z in best[:3]]
+        points.append({
+            "type": "point",
+            "panel_id": panel_id,
+            "class": klass,
+            "class_candidates": candidates,
+            "depth": round(depth, 2),
+            "depth_tolerance": 0.2,
+            "pixel_x": round(cx, 1),
+            "pixel_y": round(cy, 1),
+            "color": "black",
+            "source": "data_mark",
+        })
+
+    return _dedup_points(points)
+
+
+def _calibrate_axis_ticks(
+    color_image, plot: tuple[int, int, int, int], log_axis: bool,
+) -> dict[str, Any] | None:
+    """Calibrate the x axis of a chart region from OCR'd tick labels.
+
+    Crops the horizontal strip just below the plot frame, upscales it and
+    OCRs with a digit whitelist (TSV for positions).  Returns a dict
+    ``{"kind": "log"|"linear", "a": ..., "b": ...}`` mapping pixel x
+    → data value (``log10(value) = a*px + b`` for log, ``value = a*px + b``
+    for linear), or ``None`` when fewer than two valid ticks are found.
+    """
+    try:
+        from .extractors import _find_tesseract, _tesseract_env
+    except Exception:
+        return None
+    tesseract = _find_tesseract()
+    if tesseract is None:
+        return None
+
+    import csv
+    import io
+
+    px0, py0, px1, py1 = plot
+    strip_h = max(40, int((py1 - py0) * 0.16))
+    y0 = max(0, py1 - 4)
+    y1 = min(color_image.height, py1 + strip_h)
+    x0 = max(0, px0 - 12)
+    x1 = min(color_image.width, px1 + 16)
+    strip = color_image.crop((x0, y0, x1, y1))
+    if strip.width < 40 or strip.height < 8:
+        return None
+
+    w, h = strip.size
+    scale = max(3, int(240 / max(w, 1)))
+    if scale > 1:
+        from PIL import Image
+        strip = strip.resize((w * scale, h * scale), Image.LANCZOS)
+
+    tmp = tempfile.NamedTemporaryFile(prefix="doc_textify_ticks_", suffix=".png", delete=False)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+    try:
+        strip.save(tmp_path)
+        env = _tesseract_env(tesseract)
+        r = subprocess.run(
+            [str(tesseract), str(tmp_path), "stdout", "-l", "eng", "--psm", "6",
+             "-c", "tessedit_char_whitelist=0123456789.", "tsv"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=env, timeout=25,
+        )
+        if r.returncode != 0:
+            return None
+        rows = list(csv.DictReader(io.StringIO(r.stdout), delimiter="\t"))
+    except Exception:
+        return None
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    ticks: list[tuple[float, float]] = []  # (value, pixel_x)
+    for row in rows:
+        text = (row.get("text") or "").strip()
+        if not text:
+            continue
+        try:
+            conf = float(row.get("conf", "-1"))
+        except ValueError:
+            conf = -1
+        if conf < 40:
+            continue
+        try:
+            value = float(text)
+        except ValueError:
+            continue
+        if log_axis:
+            # log-axis ticks are "nice" decade values (0.1, 1, 2 … 9, 10);
+            # reject OCR misreads such as "16" for "10" or stray "2100".
+            if not _is_nice_log_tick(value):
+                continue
+        elif not (-0.6 <= value <= 1.6):
+            continue
+        try:
+            left = float(row["left"])
+            width = float(row["width"])
+        except (KeyError, ValueError):
+            continue
+        px = x0 + (left + width / 2) / scale
+        ticks.append((value, px))
+
+    if len(ticks) < 2:
+        return None
+
+    # cluster near-duplicate ticks (same label read twice)
+    ticks.sort(key=lambda t: t[1])
+    clustered: list[tuple[float, float]] = []
+    for value, px in ticks:
+        if clustered and abs(px - clustered[-1][1]) <= 14:
+            # keep the one closest to a whole-number value
+            if abs(value - round(value)) < abs(clustered[-1][0] - round(clustered[-1][0])):
+                clustered[-1] = (value, px)
+            continue
+        clustered.append((value, px))
+    ticks = clustered
+    if len(ticks) < 2:
+        return None
+
+    # fit (log10(value) vs px) or (value vs px) with least squares
+    xs = [px for _, px in ticks]
+    ys = [math.log10(v) for v, _ in ticks] if log_axis else [v for v, _ in ticks]
+    n = len(xs)
+    sx = sum(xs)
+    sy = sum(ys)
+    sxx = sum(x * x for x in xs)
+    sxy = sum(x * y for x, y in zip(xs, ys))
+    denom = n * sxx - sx * sx
+    if abs(denom) < 1e-9:
+        return None
+    slope = (n * sxy - sx * sy) / denom
+    intercept = (sy - slope * sx) / n
+    if log_axis and (slope <= 0 or abs(slope) < 1e-6):
+        return None
+
+    if log_axis:
+        # Anchor the log line exactly on the "1" tick when present — its
+        # label is the most reliably OCR'd and removes sub-decade drift.
+        one_tick = [px for v, px in ticks if abs(v - 1.0) < 1e-6]
+        if one_tick:
+            intercept = -slope * one_tick[0]
+
+    return {"kind": "log" if log_axis else "linear", "a": slope, "b": intercept}
+
+
+def _is_nice_log_tick(value: float) -> bool:
+    """Return True when *value* is a decade/major log tick (1–9 × 10^k)."""
+    import math as _m
+    if value <= 0:
+        return False
+    mantissa = value / (10 ** _m.floor(_m.log10(value)))
+    return abs(mantissa - round(mantissa)) < 1e-6 and 1 <= round(mantissa) <= 9
+
+
+def _tick_to_data(calib: dict[str, Any], px: float, log_axis: bool) -> float | None:
+    """Map a pixel x to a data value via the tick calibration."""
+    try:
+        if log_axis:
+            return 10 ** (calib["a"] * px + calib["b"])
+        return calib["a"] * px + calib["b"]
+    except Exception:
+        return None
+
+
+def _find_zone_anchors(
+    color_image, kind: str, plot: tuple[int, int, int, int],
+) -> dict[int, tuple[float, float]]:
+    """Locate zone-number anchors inside the plot area.
+
+    Tries in-plot digit OCR (sparse text mode, digit whitelist); when that
+    yields fewer than three distinct digits, falls back to the standard
+    SBT zone-layout table expressed as plot fractions.
+
+    Returns a dict mapping zone number → (pixel_x, pixel_y).
+    """
+    px0, py0, px1, py1 = plot
+    anchors = _ocr_zone_digits(color_image, (px0, py0, px1, py1))
+    if len(anchors) >= 3:
+        return anchors
+
+    table = _SBT_ZONE_ANCHORS.get(kind)
+    if not table:
+        return {}
+    return {
+        zone: (px0 + fx * (px1 - px0), py0 + fy * (py1 - py0))
+        for zone, (fx, fy) in table.items()
+    }
+
+
+def _ocr_zone_digits(
+    color_image, plot: tuple[int, int, int, int],
+) -> dict[int, tuple[float, float]]:
+    """OCR single-digit zone numbers inside the plot area.
+
+    Returns {digit: (pixel_x, pixel_y)} for digits 1-9 with confidence
+    above a threshold, deduplicated (clusters within 22 px keep the
+    highest-confidence reading).
+    """
+    try:
+        from .extractors import _find_tesseract, _tesseract_env
+    except Exception:
+        return {}
+    tesseract = _find_tesseract()
+    if tesseract is None:
+        return {}
+
+    import csv
+    import io
+
+    px0, py0, px1, py1 = plot
+    plot_img = color_image.crop((px0, py0, px1, py1))
+    if plot_img.width < 60 or plot_img.height < 60:
+        return {}
+    w, h = plot_img.size
+    scale = max(3, int(360 / max(w, 1)))
+    if scale > 1:
+        from PIL import Image
+        plot_img = plot_img.resize((w * scale, h * scale), Image.LANCZOS)
+
+    tmp = tempfile.NamedTemporaryFile(prefix="doc_textify_zones_", suffix=".png", delete=False)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+    try:
+        plot_img.save(tmp_path)
+        env = _tesseract_env(tesseract)
+        r = subprocess.run(
+            [str(tesseract), str(tmp_path), "stdout", "-l", "eng", "--psm", "11",
+             "-c", "tessedit_char_whitelist=0123456789", "tsv"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=env, timeout=30,
+        )
+        if r.returncode != 0:
+            return {}
+        rows = list(csv.DictReader(io.StringIO(r.stdout), delimiter="\t"))
+    except Exception:
+        return {}
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    found: list[tuple[int, float, float, float]] = []  # (digit, px, py, conf)
+    for row in rows:
+        text = (row.get("text") or "").strip()
+        if len(text) != 1 or not text.isdigit() or text == "0":
+            continue
+        digit = int(text)
+        try:
+            conf = float(row.get("conf", "-1"))
+            left = float(row["left"])
+            top = float(row["top"])
+            width = float(row["width"])
+            height = float(row["height"])
+        except (KeyError, ValueError):
+            continue
+        if conf < 50:
+            continue
+        found.append((digit, px0 + (left + width / 2) / scale, py0 + (top + height / 2) / scale, conf))
+
+    # cluster by position; keep the highest-confidence digit per cluster
+    found.sort(key=lambda f: (f[2], f[1]))
+    clusters: list[list[tuple[int, float, float, float]]] = []
+    for f in found:
+        if clusters and abs(f[1] - clusters[-1][0][1]) <= 22 and abs(f[2] - clusters[-1][0][2]) <= 22:
+            clusters[-1].append(f)
+        else:
+            clusters.append([f])
+
+    anchors: dict[int, tuple[float, float]] = {}
+    for cl in clusters:
+        cl.sort(key=lambda f: f[3], reverse=True)
+        digit, px, py, _conf = cl[0]
+        anchors[digit] = (px, py)
+    return anchors
 
 
 def _build_structure_entry(

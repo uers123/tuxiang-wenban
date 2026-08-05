@@ -7,6 +7,20 @@
 
 > 离线、CPU-only、免视觉大模型的 PDF / 图片 → Markdown / LLM 文本转换器
 
+## 效果演示
+
+**命令行一键转换**（扫描 PDF → Markdown / JSON）：
+
+![CLI 命令行演示](docs/images/cli-demo.png)
+
+**扫描图表页 → 结构化文本**（OCR + 版面分析 + 图表提取）：
+
+![PDF 转 Markdown / JSON 演示](docs/images/pipeline-demo.png)
+
+**处理流水线**（离线、CPU-only、免视觉大模型）：
+
+![处理流水线架构](docs/images/architecture.png)
+
 ## 项目介绍
 
 `doc-textify` 是一个面向文本大模型的图片/PDF 文本化预处理器。它的目标是把 PDF、扫描件、截图、拍照文档和部分图表转换成大模型容易读取的 Markdown、TXT、低 Token 文本协议和 JSON 结构化数据。

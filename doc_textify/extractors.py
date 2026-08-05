@@ -25,7 +25,12 @@ from .models import Block, Document, Page
 from .layout import enhance_page_layout
 from .chart import analyze_chart
 from .table_extraction import extract_tables_from_image
-from .formula_ocr import recognize_formula, is_formula_ocr_available
+from .formula_ocr import (
+    recognize_formula,
+    is_formula_ocr_available,
+    reconstruct_formula_text,
+    looks_like_latex,
+)
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
@@ -212,6 +217,10 @@ def extract_pdf(
         # Phase 3: Chart analysis on the rendered page (B&W classification
         # charts and coloured plots both benefit; best-effort).
         _attach_chart_analysis(page, pil_image, chart_colors)
+        # Phase 3.2: Rule-based LaTeX reconstruction for detected formula
+        # blocks (always-on; re-OCR of the full formula line + rule-based
+        # reconstruction so scanned formulas render as $$...$$).
+        _reconstruct_formula_blocks(page, pil_image)
         # Formula OCR (best-effort, requires --formula-ocr flag)
         if formula_ocr and pil_image is not None:
             _process_formula_blocks(page, pil_image)
@@ -329,6 +338,9 @@ def extract_image(source: Path, *, lang: str = "eng", min_confidence: float = 45
 
     # Phase 3: Chart analysis (only if we have a color image)
     _attach_chart_analysis(page, color_image, chart_colors)
+
+    # Phase 3.2: Rule-based LaTeX reconstruction (always-on)
+    _reconstruct_formula_blocks(page, color_image)
 
     # Phase 3.5: Formula OCR (best-effort, requires --formula-ocr flag)
     if formula_ocr and color_image is not None and page.blocks:
@@ -1065,6 +1077,216 @@ def _merge_blocks(l, r):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  Rule-based formula LaTeX reconstruction (always-on)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _reconstruct_formula_blocks(page: Page, color_image) -> None:
+    """Reconstruct LaTeX for every ``type="formula"`` block.
+
+    Scanned formulas are usually OCR'd into tiny fragments ("By =",
+    "X 100 =") that span only part of the real formula line.  For each
+    formula block this step:
+
+      1. expands the crop to the full text line (union with neighbouring
+         blocks on the same line, then out to the nearest column gaps),
+      2. re-OCRs the line region with Tesseract (upscaled),
+      3. runs the rule-based LaTeX reconstruction
+         (:func:`doc_textify.formula_ocr.reconstruct_formula_text`),
+      4. keeps the result only when it contains recognizable LaTeX
+         (backslash macros, subscripts, …).
+
+    Blocks that already carry ``formula_latex`` metadata (e.g. set by the
+    pix2tex path) are left untouched.  Failures are silently skipped — the
+    raw OCR fragment text remains as a fallback.
+    """
+    import PIL.Image
+
+    if not page.blocks or color_image is None:
+        return
+    tesseract = _find_tesseract()
+    if tesseract is None:
+        # No OCR backend: at least run the rule-based pass over whatever
+        # text the formula blocks already carry.
+        for block in page.blocks:
+            if block.type != "formula":
+                continue
+            _apply_formula_reconstruction(block)
+        return
+
+    try:
+        import numpy as np
+        gray = np.array(color_image.convert("L")) if color_image.mode != "L" else np.array(color_image)
+    except Exception:
+        gray = None
+    img_w, img_h = color_image.size
+
+    for block in page.blocks:
+        if block.type != "formula" or not block.bbox:
+            continue
+        if block.metadata.get("formula_latex"):
+            continue
+
+        x0, y0, x1, y1 = block.bbox
+        bh = max(y1 - y0, 1)
+        bw = max(x1 - x0, 1)
+        # Skip absurdly large "formula" regions (misclassified captions)
+        if bh > img_h * 0.5 or bw > img_w * 0.9:
+            _apply_formula_reconstruction(block)
+            continue
+
+        try:
+            region = _expand_formula_region(
+                gray, page.blocks, int(x0), int(y0), int(x1), int(y1), img_w, img_h,
+            )
+            crop = color_image.crop((region[0], region[1], region[2], region[3]))
+            raw = _ocr_formula_line(crop, tesseract)
+            if raw:
+                latex = reconstruct_formula_text(raw)
+                if looks_like_latex(latex):
+                    original_latex = reconstruct_formula_text(block.text)
+                    if not looks_like_latex(original_latex) or _math_marker_count(latex) >= _math_marker_count(original_latex):
+                        block.text = latex
+                        block.metadata["formula_latex"] = True
+                        continue
+        except Exception:
+            pass  # best-effort — fall through to text-only reconstruction
+
+        _apply_formula_reconstruction(block)
+
+
+def _apply_formula_reconstruction(block: Block) -> None:
+    """Run the rule-based reconstruction over the block's existing text."""
+    try:
+        latex = reconstruct_formula_text(block.text)
+        if looks_like_latex(latex):
+            block.text = latex
+            block.metadata["formula_latex"] = True
+    except Exception:
+        pass
+
+
+def _expand_formula_region(
+    gray, blocks: list[Block], x0: int, y0: int, x1: int, y1: int,
+    img_w: int, img_h: int,
+) -> tuple[int, int, int, int]:
+    """Expand a formula bbox to the full text line it belongs to.
+
+    Step 1: union with any block whose vertical range overlaps the band
+    ``[y0 - pad, y1 + pad]`` by at least 25% of the formula height.
+    Step 2: expand horizontally out to the nearest column gaps (blank
+    vertical gutters) within the band.
+    """
+    pad = max(10, int(0.75 * (y1 - y0)))
+    band_y0, band_y1 = y0 - pad, y1 + pad
+    fh = max(y1 - y0, 1)
+
+    ux0, ux1 = x0, x1
+    uy0, uy1 = y0, y1
+    for b in blocks:
+        if b is None or not b.bbox:
+            continue
+        if b.type in ("figure", "table", "header", "footer"):
+            continue
+        bx0, by0, bx1, by1 = b.bbox
+        if bx1 <= ux0 - img_w or bx0 >= ux1 + img_w:
+            continue
+        lo = max(by0, band_y0)
+        hi = min(by1, band_y1)
+        overlap = hi - lo
+        if overlap >= fh * 0.25:
+            ux0 = min(ux0, int(bx0))
+            ux1 = max(ux1, int(bx1))
+            uy0 = min(uy0, int(by0))
+            uy1 = max(uy1, int(by1))
+
+    # Expand x to nearest blank gutters inside the band (column gaps).
+    if gray is not None:
+        gy0 = max(0, uy0 - 4)
+        gy1 = min(img_h, uy1 + 4)
+        if gy1 > gy0:
+            band = gray[gy0:gy1, :]
+            col_dark = (band < 128).sum(axis=0)
+            blank = col_dark < max(2, (gy1 - gy0) * 0.05)
+
+            def _nearest_gap(from_x: int, direction: int) -> int:
+                # direction: -1 scan left, +1 scan right
+                run_start = None
+                x = from_x
+                while 0 <= x < img_w:
+                    if blank[x]:
+                        if run_start is None:
+                            run_start = x
+                    else:
+                        if run_start is not None and abs(from_x - run_start) >= 8:
+                            return run_start if direction < 0 else run_start
+                        run_start = None
+                    x += direction
+                return run_start if run_start is not None else (0 if direction < 0 else img_w)
+
+            left_gap = _nearest_gap(ux0, -1)
+            right_gap = _nearest_gap(ux1, +1)
+            if left_gap is not None and left_gap < ux0:
+                ux0 = max(0, left_gap)
+            if right_gap is not None and right_gap > ux1:
+                ux1 = min(img_w, right_gap)
+
+    # Cap the span so we never swallow the whole page.
+    if ux1 - ux0 > img_w * 0.8:
+        cx = (x0 + x1) / 2
+        half = img_w * 0.4
+        ux0, ux1 = max(0, int(cx - half)), min(img_w, int(cx + half))
+    return ux0, uy0, ux1, uy1
+
+
+def _ocr_formula_line(crop, tesseract: Path) -> str | None:
+    """OCR an (already expanded) formula line region with Tesseract.
+
+    Upscales 3× (minimum 300 px wide) and prefers ``--psm 6``; falls back
+    to ``--psm 7`` when the first pass returns nothing.
+    """
+    import PIL.Image
+
+    if crop.width < 4 or crop.height < 4:
+        return None
+    w, h = crop.size
+    scale = max(3, int(300 / max(w, 1)), int(90 / max(h, 1)))
+    if scale > 1:
+        crop = crop.resize((w * scale, h * scale), PIL.Image.LANCZOS)
+
+    tmp = tempfile.NamedTemporaryFile(prefix="doc_textify_formula_line_", suffix=".png", delete=False)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+    try:
+        crop.save(tmp_path)
+        env = _tesseract_env(tesseract)
+        for psm in ("6", "7"):
+            r = subprocess.run(
+                [str(tesseract), str(tmp_path), "stdout", "-l", "eng", "--psm", psm],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env=env, timeout=25,
+            )
+            if r.returncode == 0:
+                text = r.stdout.strip()
+                if text:
+                    return " ".join(text.split())
+    except Exception:
+        pass
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return None
+
+
+def _math_marker_count(text: str) -> int:
+    """Count LaTeX math markers in *text* (for choosing the better of two
+    reconstruction candidates)."""
+    return (
+        len(re.findall(r"\\[A-Za-z]+", text or ""))
+        + len(re.findall(r"_(?=[A-Za-z0-9{])", text or ""))
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Formula OCR processing
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1082,6 +1304,8 @@ def _process_formula_blocks(page: Page, color_image) -> None:
 
     for block in page.blocks:
         if block.type != "formula" or not block.bbox:
+            continue
+        if block.metadata.get("formula_latex"):
             continue
 
         try:

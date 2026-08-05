@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .models import Block, Document
@@ -91,6 +92,9 @@ def render_llm_text(document: Document) -> str:
 
             if block.type == "formula":
                 formula_text = text or ""
+                if not _formula_is_latex(formula_text):
+                    from .formula_ocr import reconstruct_formula_text
+                    formula_text = reconstruct_formula_text(formula_text)
                 parts.append(f"$${formula_text}$$")
                 prev_type = "formula"
                 continue
@@ -232,7 +236,11 @@ def _render_block_markdown(block: Block, page_number: int) -> str:
             return _render_chart_data_markdown(chart_data, block, page_number)
         return _placeholder("Figure", block, page_number)
     if block.type == "formula":
-        return f"[Formula: page={page_number}, bbox={_bbox(block)}, text={text or 'not detected'}]"
+        formula_text = text or ""
+        if not _formula_is_latex(formula_text):
+            from .formula_ocr import reconstruct_formula_text
+            formula_text = reconstruct_formula_text(formula_text)
+        return f"$${formula_text}$$"
     if block.type == "uncertain":
         return f"[uncertain: {text}]"
     if block.type == "placeholder":
@@ -447,6 +455,9 @@ def _render_block_deepseek(block: Block, page_number: int) -> str:
         return ""
     if block.type == "formula":
         formula_text = text or ""
+        if not _formula_is_latex(formula_text):
+            from .formula_ocr import reconstruct_formula_text
+            formula_text = reconstruct_formula_text(formula_text)
         return f"$${formula_text}$$"
     if block.type in {"header", "footer"}:
         return f"[{block.type}] {text}"
@@ -658,6 +669,16 @@ def _render_block_text(block: Block, page_number: int) -> str:
 def _placeholder(label: str, block: Block, page_number: int) -> str:
     caption = block.text.strip() or "not detected"
     return f"[{label}: page={page_number}, bbox={_bbox(block)}, caption={caption}]"
+
+
+def _formula_is_latex(text: str) -> bool:
+    """Cheap check for already-reconstructed LaTeX formula text."""
+    if not text:
+        return False
+    t = text.strip()
+    if t.startswith("[formula]"):
+        return False
+    return bool(re.search(r"\\[A-Za-z]+|_\{|_", t))
 
 
 def _bbox(block: Block) -> str:
