@@ -76,6 +76,33 @@
      "class": 7,
      "depth": 0.8
     }
+   ],
+   "predicted_intervals": [
+    {
+     "class": 1,
+     "start_depth": 0.2,
+     "end_depth": 9.6
+    },
+    {
+     "class": 2,
+     "start_depth": 12.9,
+     "end_depth": 14.3
+    },
+    {
+     "class": 3,
+     "start_depth": 3.2,
+     "end_depth": 24.7
+    },
+    {
+     "class": 4,
+     "start_depth": 10.9,
+     "end_depth": 17.0
+    },
+    {
+     "class": 5,
+     "start_depth": 7.7,
+     "end_depth": 25.1
+    }
    ]
   },
   {
@@ -130,6 +157,33 @@
     {
      "class": 6,
      "depth": 0.0
+    }
+   ],
+   "predicted_intervals": [
+    {
+     "class": 1,
+     "start_depth": 9.9,
+     "end_depth": 15.1
+    },
+    {
+     "class": 2,
+     "start_depth": 9.2,
+     "end_depth": 19.4
+    },
+    {
+     "class": 3,
+     "start_depth": 11.4,
+     "end_depth": 19.2
+    },
+    {
+     "class": 4,
+     "start_depth": 12.8,
+     "end_depth": 22.7
+    },
+    {
+     "class": 5,
+     "start_depth": 19.2,
+     "end_depth": 29.7
     }
    ]
   }

@@ -114,6 +114,20 @@ def analyze_chart(
             result["chart_detected"] = True
             result["detection_method"] = "structure_fallback"
 
+    # Step 5: SBT-style zone boundary intervals (independent supplement).
+    # Zone boundaries are black diagonal polylines — invisible to the
+    # colour pipeline AND to the structure fallback.  Run per panel as a
+    # supplement so intervals coexist with any fallback points/structures.
+    if panels:
+        for panel in panels:
+            zx0, zy0, zx1, zy1 = panel["x0"], panel["y0"], panel["x1"], panel["y1"]
+            zph = zy1 - zy0
+            zpw = zx1 - zx0
+            zone_intervals = _extract_zone_boundaries(
+                color_image, panel, ocr_blocks, zph, zpw,
+            )
+            result["chart_data"].extend(zone_intervals)
+
     return result
 
 
@@ -1728,6 +1742,163 @@ def _extract_intervals_from_lines(
             "pixel_x": round(avg_x, 1),
             "color": color_name,
         })
+
+    return intervals
+
+
+def _extract_zone_boundaries(
+    color_image,
+    panel: dict,
+    ocr_blocks: list[Block],
+    ph: int,
+    pw: int,
+) -> list[dict]:
+    """Extract SBT-style zone boundary intervals from black diagonal lines.
+
+    SBT (soil behaviour type) charts divide the plot into numbered zones with
+    diagonal polylines.  These lines are typically black (ink), so the
+    colour-based pipeline never sees them.  This function builds an ink mask
+    (grayscale OTSU), detects line segments with Hough, keeps only diagonal
+    segments (slope between ``_ZONE_MIN_SLOPE`` and ``_ZONE_MAX_SLOPE``),
+    clusters collinear segments into boundary polylines, and maps each
+    polyline's y-extent into data coordinates via the panel calibration.
+
+    Returns a list of interval dicts with ``source: "zone_boundary"``.
+    The ``pixel_x0``/``pixel_x1`` fields use distinct names so they do NOT
+    interfere with point class assignment (which keys on ``pixel_x``).
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return []
+
+    x0, y0, x1, y1 = panel["x0"], panel["y0"], panel["x1"], panel["y1"]
+    img = np.array(color_image)
+    region = img[y0:y1, x0:x1]
+    if region.size == 0:
+        return []
+
+    # ── Ink mask (all dark content, not just coloured elements) ───────
+    gray = cv2.cvtColor(region, cv2.COLOR_RGB2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    min_len = max(70, int(pw * 0.08))
+    lines = cv2.HoughLinesP(
+        ink, 1, np.pi / 180, threshold=40,
+        minLineLength=min_len, maxLineGap=8,
+    )
+    if lines is None:
+        return []
+
+    # ── Keep only diagonal segments (zone boundaries) ─────────────────
+    _ZONE_MIN_SLOPE = 0.15   # exclude near-horizontal grid lines
+    _ZONE_MAX_SLOPE = 5.0    # exclude near-vertical error bars / axes
+    segments: list[dict] = []
+    for line in lines:
+        lx1, ly1, lx2, ly2 = [int(v) for v in line.ravel()[:4]]
+        dx = abs(lx2 - lx1)
+        dy = abs(ly2 - ly1)
+        length = (dx * dx + dy * dy) ** 0.5
+        if length < min_len * 0.8:
+            continue
+        slope = dy / max(dx, 1)
+        if slope < _ZONE_MIN_SLOPE or slope > _ZONE_MAX_SLOPE:
+            continue
+        # Normal-form (angle, rho) representation for collinearity
+        ang = math.atan2(ly2 - ly1, lx2 - lx1)
+        nang = ang + math.pi / 2
+        mx = (lx1 + lx2) / 2.0
+        my = (ly1 + ly2) / 2.0
+        rho = mx * math.cos(nang) + my * math.sin(nang)
+        segments.append({
+            "x1": lx1, "y1": ly1, "x2": lx2, "y2": ly2,
+            "len": length, "slope": slope, "ang": ang, "rho": rho,
+        })
+
+    if not segments:
+        return []
+
+    # ── Cluster collinear segments via (angle, rho) proximity ─────────
+    # Segments on the same boundary line share angle AND rho; parallel
+    # neighbours (same angle, different rho) stay separate.
+    clusters: list[dict] = []
+    for seg in segments:
+        placed = False
+        for cl in clusters:
+            dang = abs(cl["ang"] - seg["ang"])
+            dang = min(dang, 2 * math.pi - dang)
+            if dang > 0.14:          # ~8° angle bucket
+                continue
+            if abs(cl["rho"] - seg["rho"]) > 30:   # ~30px rho bucket
+                continue
+            cl["segs"].append(seg)
+            cl["ang"] = sum(s["ang"] for s in cl["segs"]) / len(cl["segs"])
+            cl["rho"] = sum(s["rho"] for s in cl["segs"]) / len(cl["segs"])
+            cl["x1"] = min(s["x1"] for s in cl["segs"])
+            cl["y1"] = min(s["y1"] for s in cl["segs"])
+            cl["x2"] = max(s["x2"] for s in cl["segs"])
+            cl["y2"] = max(s["y2"] for s in cl["segs"])
+            placed = True
+            break
+        if not placed:
+            clusters.append({
+                "ang": seg["ang"], "rho": seg["rho"], "segs": [seg],
+                "x1": seg["x1"], "y1": seg["y1"],
+                "x2": seg["x2"], "y2": seg["y2"],
+            })
+
+    # Drop tiny clusters (likely text/symbol fragments): a boundary must
+    # have at least 2 segments OR span a meaningful length.
+    clusters = [cl for cl in clusters if len(cl["segs"]) >= 2 or cl["x2"] - cl["x1"] >= pw * 0.3]
+
+    if not clusters:
+        return []
+
+    # ── Calibration (y-axis pixel → data) ─────────────────────────────
+    if "_calibration" not in panel:
+        panel["_calibration"] = calibrate_axis(color_image, panel, ocr_blocks)
+    calibration = panel.get("_calibration", {})
+
+    # ── Map each boundary polyline to an interval in data coordinates ──
+    # Class assignment: sort boundaries by their mean data depth (ascending),
+    # so the lowest boundary gets class 1 and the highest gets class N.
+    # This is deterministic and matches the SBT zone numbering direction
+    # (zones are numbered bottom-up).
+    intervals: list[dict] = []
+    for cl in clusters:
+        all_y = [s["y1"] for s in cl["segs"]] + [s["y2"] for s in cl["segs"]]
+        all_x = [s["x1"] for s in cl["segs"]] + [s["x2"] for s in cl["segs"]]
+        top_y = min(all_y)
+        bot_y = max(all_y)
+        left_x = min(all_x)
+        right_x = max(all_x)
+        intervals.append({
+            "type": "interval",
+            "panel_id": panel["id"],
+            "class": 0,  # placeholder, assigned below
+            "start_depth": 0.0,  # placeholder
+            "end_depth": 0.0,  # placeholder
+            "depth_tolerance": _depth_tolerance(panel),
+            "pixel_x0": float(left_x),
+            "pixel_x1": float(right_x),
+            "pixel_y0": float(top_y),
+            "pixel_y1": float(bot_y),
+            "source": "zone_boundary",
+        })
+
+    # Convert pixel y-extent → data depth for every boundary
+    for inv in intervals:
+        depth_top = pixel_to_data(inv["pixel_y0"], calibration, panel, ph)
+        depth_bot = pixel_to_data(inv["pixel_y1"], calibration, panel, ph)
+        inv["start_depth"] = round(min(depth_top, depth_bot), 1)
+        inv["end_depth"] = round(max(depth_top, depth_bot), 1)
+
+    # Assign classes by mean data depth (ascending)
+    intervals.sort(key=lambda inv: (inv["start_depth"] + inv["end_depth"]) / 2)
+    for idx, inv in enumerate(intervals):
+        inv["class"] = idx + 1
 
     return intervals
 
