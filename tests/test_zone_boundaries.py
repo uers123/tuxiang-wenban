@@ -6,10 +6,15 @@ do not depend on real scans or Tesseract.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from doc_textify.chart import _extract_zone_boundaries
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:  # pragma: no cover
+    HAS_NUMPY = False
 
 try:
     from PIL import Image, ImageDraw
@@ -17,7 +22,10 @@ try:
 except ImportError:  # pragma: no cover
     HAS_PIL = False
 
-pytestmark = pytest.mark.skipif(not HAS_PIL, reason="Pillow required")
+pytestmark = pytest.mark.skipif(
+    not (HAS_PIL and HAS_NUMPY),
+    reason="Pillow and numpy required (chart extras)",
+)
 
 
 def _make_panel_image(
